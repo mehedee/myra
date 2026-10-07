@@ -281,6 +281,9 @@ public sealed partial class AppSettings : ObservableObject
     /// Window and taskbar icon: a MyraIconFamily name and a MyraIconVariant name (see MyraIcons).
     [ObservableProperty] private string _iconFamily = MyraIcons.DefaultFamily;
     [ObservableProperty] private string _iconVariant = MyraIcons.DefaultVariant;
+    /// OpenSubtitles.com search language codes: first choice, and an optional retry language ("" = none).
+    [ObservableProperty] private string _subtitlePreferredLanguage = "en";
+    [ObservableProperty] private string _subtitleFallbackLanguage = "";
 
     public void Clamp()
     {

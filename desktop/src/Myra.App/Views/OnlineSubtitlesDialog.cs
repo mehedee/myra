@@ -3,6 +3,7 @@ using System.Globalization;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Templates;
+using Avalonia.Platform.Storage;
 using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Media;
@@ -11,7 +12,9 @@ using Myra.Core;
 
 namespace Myra.App.Views;
 
-/// Find Online Subtitles (OpenSubtitles.com). Closes with the cached subtitle path, or null.
+/// Find Subtitles. Free sources come first: nearby files, cached downloads, a manual file, the
+/// OpenSubtitles.org web page. The OpenSubtitles.com search runs only when the user asks for it.
+/// Closes with the subtitle path, or null.
 public sealed class OnlineSubtitlesDialog : AppDialog
 {
     public static readonly (string Code, string Label)[] Languages =
@@ -23,7 +26,16 @@ public sealed class OnlineSubtitlesDialog : AppDialog
     /// Last allowance reported by OpenSubtitles in this session.
     private static int? _remaining;
 
+    /// Opens an https page in the default browser. Checks replace it.
+    public static Action<string> OpenUrl { get; set; } = OpenLink;
+
+    /// Lets the user pick a subtitle file. Checks replace it.
+    public Func<Task<string?>>? PickFile { get; set; }
+
     private readonly AppServices _services;
+    private readonly OpenSubtitlesService _provider;
+    private readonly GlobalSearchResult _media;
+    private readonly StackPanel _freeSources = new() { Spacing = 6 };
     private readonly ObservableCollection<OnlineSubtitleResult> _results = [];
     private readonly TextBox _name = new() { Watermark = "Movie or series title" };
     private readonly TextBox _year = new() { Watermark = "Year", Width = 80 };
@@ -44,9 +56,13 @@ public sealed class OnlineSubtitlesDialog : AppDialog
     private int _page;
     private bool _busy;
 
-    public OnlineSubtitlesDialog(AppServices services, GlobalSearchResult media) : base("Find Online Subtitles", 740, 680, resizable: true)
+    public OnlineSubtitlesDialog(AppServices services, GlobalSearchResult media, OpenSubtitlesService? provider = null)
+        : base("Find Subtitles", 740, 780, resizable: true)
     {
         _services = services;
+        _provider = provider ?? services.Subtitles;
+        _media = media;
+        _language.SelectedIndex = Math.Max(0, Array.FindIndex(Languages, l => l.Code == services.Store.Settings.SubtitlePreferredLanguage));
         var identity = MediaIdentity.Parse(media.Entry.Name);
         _name.Text = identity.Title;
         _year.Text = identity.Year ?? "";
@@ -78,7 +94,7 @@ public sealed class OnlineSubtitlesDialog : AppDialog
         var cancel = Action("Cancel", isCancel: true);
         cancel.Click += (_, _) => Close();
         Closing += (_, _) => _cancellation?.Cancel();
-        Opened += async (_, _) => await SearchAsync(false);
+        Opened += async (_, _) => await DiscoverFreeSourcesAsync();
 
         _busyPanel.Children.Add(new ProgressBar { IsIndeterminate = true, Width = 90 });
         _busyPanel.Children.Add(_busyText);
@@ -89,7 +105,7 @@ public sealed class OnlineSubtitlesDialog : AppDialog
         bottom.Children.Add(_more);
         bottom.Children.Add(_busyPanel);
         bottom.Children.Add(_message);
-        bottom.Children.Add(Muted("OpenSubtitles.com • Only title/episode information is sent, never your media URL. Downloads use your provider allowance and are cached locally."));
+        bottom.Children.Add(Muted("Search uses OpenSubtitles.com and starts only when you press Search. Only title/episode information is sent, never your media URL. Downloads use your provider allowance and are cached locally."));
         bottom.Children.Add(_quota);
         var footer = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto,Auto"), ColumnSpacing = 8 };
         footer.Children.Add(LinkButton("Subtitle Account / API Key", "https://www.opensubtitles.com/en/consumers"));
@@ -102,8 +118,17 @@ public sealed class OnlineSubtitlesDialog : AppDialog
         panel.Children.Add(bottom);
 
         var top = new StackPanel { Spacing = 8, Margin = new Thickness(0, 0, 0, 10) };
-        top.Children.Add(Title2("Find Online Subtitles"));
+        top.Children.Add(Title2("Find Subtitles"));
         top.Children.Add(new TextBlock { Text = media.Entry.Name, FontSize = 12, Opacity = 0.65, TextTrimming = TextTrimming.CharacterEllipsis });
+        top.Children.Add(Muted("First check the player's embedded subtitle tracks. Local files and previously downloaded subtitles need no account or paid subscription."));
+        var import = new Button { Content = "Import Subtitle…" };
+        import.Click += async (_, _) => await ImportAsync();
+        var web = new Button { Content = "Find on the Web" };
+        web.Click += (_, _) => OpenUrl(WebSearchUrl().AbsoluteUri);
+        top.Children.Add(Buttons(import, web));
+        top.Children.Add(_freeSources);
+        top.Children.Add(new Border { Height = 1, Opacity = 0.25, Background = Brushes.Gray, Margin = new Thickness(0, 4) });
+        top.Children.Add(Heading("Optional Free-Account Search"));
         top.Children.Add(_name);
         var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
         row.Children.AddRange([_year, _season, _episode, _language, _search]);
@@ -113,6 +138,82 @@ public sealed class OnlineSubtitlesDialog : AppDialog
         panel.Children.Add(_list);
         Content = panel;
         UpdateButtons();
+    }
+
+    private static StackPanel Buttons(params Control[] controls)
+    {
+        var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+        row.Children.AddRange(controls);
+        return row;
+    }
+
+    private Uri WebSearchUrl() =>
+        SubtitleLocal.WebSearchUrl((_name.Text ?? "").Trim(), Blank(_year.Text), Blank(_season.Text), Blank(_episode.Text));
+
+    /// Nearby files and cached downloads for this title. No network access.
+    private async Task DiscoverFreeSourcesAsync()
+    {
+        var name = _media.Entry.Name;
+        var url = _media.Entry.Url;
+        var (nearby, cached) = await Task.Run(() =>
+        {
+            IReadOnlyList<string> cachedFiles;
+            try
+            {
+                cachedFiles = _services.SubtitleCache.Cached(MediaIdentity.Parse(name));
+            }
+            catch (Exception ex) when (ex is SubtitleException or IOException or UnauthorizedAccessException)
+            {
+                cachedFiles = [];
+            }
+            return (SubtitleLocal.Nearby(url), cachedFiles);
+        });
+        _freeSources.Children.Clear();
+        AddSource("Nearby Subtitle Files", nearby);
+        AddSource("Cached Subtitles for This Title", cached);
+    }
+
+    private void AddSource(string heading, IReadOnlyList<string> files)
+    {
+        if (files.Count == 0) return;
+        _freeSources.Children.Add(new TextBlock { Text = heading, FontWeight = FontWeight.SemiBold });
+        foreach (var file in files)
+        {
+            var button = new Button { Content = Path.GetFileName(file), Tag = file, HorizontalAlignment = HorizontalAlignment.Left };
+            ToolTip.SetTip(button, file);
+            button.Click += (_, _) => UseFile(file);
+            _freeSources.Children.Add(button);
+        }
+    }
+
+    private async Task ImportAsync()
+    {
+        string? path;
+        if (PickFile is { } pick)
+        {
+            path = await pick();
+        }
+        else
+        {
+            var files = await StorageProvider.OpenFilePickerAsync(new Avalonia.Platform.Storage.FilePickerOpenOptions
+            {
+                Title = "Choose a subtitle file",
+                AllowMultiple = false,
+                FileTypeFilter = [new Avalonia.Platform.Storage.FilePickerFileType("Subtitles") { Patterns = [.. SubtitleLocal.Extensions.Select(e => "*" + e)] }],
+            });
+            path = files.FirstOrDefault()?.TryGetLocalPath();
+        }
+        if (path is not null) UseFile(path);
+    }
+
+    private void UseFile(string path)
+    {
+        if (!SubtitleLocal.IsUsable(path))
+        {
+            Show(_message, "Choose a supported subtitle file smaller than 5 MB.");
+            return;
+        }
+        Close(path);
     }
 
     private static Control ResultRow(OnlineSubtitleResult? result)
@@ -196,8 +297,18 @@ public sealed class OnlineSubtitlesDialog : AppDialog
         SetBusy(true, "Searching OpenSubtitles…");
         try
         {
-            var response = await _services.Subtitles.SearchAsync(identity, language, credentials, page, cancellation.Token);
+            var response = await _provider.SearchAsync(identity, language, credentials, page, cancellation.Token);
             if (cancellation.IsCancellationRequested) return;
+            var fallback = _services.Store.Settings.SubtitleFallbackLanguage;
+            if (response.Results.Count == 0 && !more && fallback.Length > 0 && fallback != language)
+            {
+                response = await _provider.SearchAsync(identity, fallback, credentials, 1, cancellation.Token);
+                if (cancellation.IsCancellationRequested) return;
+                _submittedLanguage = fallback;
+                var index = Array.FindIndex(Languages, l => l.Code == fallback);
+                if (index >= 0) _language.SelectedIndex = index;
+                if (response.Results.Count > 0) Show(_message, "No results in your first language; showing fallback-language results.");
+            }
             var seen = _results.Select(r => r.Id).ToHashSet();
             foreach (var result in response.Results)
                 if (seen.Add(result.Id)) _results.Add(result);
@@ -227,8 +338,16 @@ public sealed class OnlineSubtitlesDialog : AppDialog
         SetBusy(true, "Downloading selected subtitle…");
         try
         {
-            var download = await _services.Subtitles.DownloadAsync(result, credentials, _services.SubtitleCache, cancellation.Token);
+            var download = await _provider.DownloadAsync(result, credentials, _services.SubtitleCache, cancellation.Token);
             if (cancellation.IsCancellationRequested) return;
+            try
+            {
+                _services.SubtitleCache.Remember(result.Id, MediaIdentity.Parse(_media.Entry.Name));
+            }
+            catch (Exception ex) when (ex is SubtitleException or IOException or UnauthorizedAccessException)
+            {
+                // The subtitle is cached either way; only the per-title shortcut is lost.
+            }
             if (download.Remaining is { } remaining)
             {
                 _remaining = remaining;
