@@ -108,8 +108,9 @@ public partial class PlayerView : UserControl
         }
         _vm = DataContext as PlayerViewModel;
         // The overlay is a window of its own, so it does not inherit this control's DataContext.
-        Header.DataContext = _vm;
-        Controls.DataContext = _vm;
+        // Header and Controls must keep inheriting it (from this view, or from OverlayRoot in fullscreen):
+        // a local DataContext set here, while Avalonia is still passing the new value down the tree,
+        // leaves their compiled bindings with a null source, so every control shows its default.
         OverlayRoot.DataContext = _vm;
         if (_vm is not { } vm) return;
         vm.PropertyChanged += OnViewModelChanged;
