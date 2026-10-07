@@ -276,6 +276,8 @@ public sealed partial class AppSettings : ObservableObject
     [ObservableProperty] private string _speedLimit = "0";
     [ObservableProperty] private AppThemeMode _theme = AppThemeMode.System;
     [ObservableProperty] private IndexingMode _indexingMode = IndexingMode.Balanced;
+    /// Global search tolerates typos and reordered words. Off means exact substring matching.
+    [ObservableProperty] private bool _fuzzyGlobalSearch = true;
 
     public void Clamp()
     {

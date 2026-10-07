@@ -16,7 +16,7 @@ All types are in the `Myra.Core` namespace. The UI owns windows, dialogs, notifi
 | Data | Windows | Linux |
 |---|---|---|
 | Sources, downloads, settings | `%APPDATA%\Myra\Myra.json` | `~/.config/Myra/Myra.json` |
-| Index (schema v3) | `%APPDATA%\Myra\LibraryIndex.sqlite` | `~/.config/Myra/LibraryIndex.sqlite` |
+| Index (schema v4) | `%APPDATA%\Myra\LibraryIndex.sqlite` | `~/.config/Myra/LibraryIndex.sqlite` |
 | Pre-migration index backup | `LibraryIndex.sqlite.v2-backup` (same folder) | same |
 | Saved Home snapshot | `LibraryIndex.sqlite.home-cache` | same |
 | Personal records (`PersonalLibraryPath`) | `%APPDATA%\Myra\EntertainmentPersonal.json` | `~/.config/Myra/EntertainmentPersonal.json` |
@@ -31,7 +31,12 @@ All types are in the `Myra.Core` namespace. The UI owns windows, dialogs, notifi
 
 ### `LibraryIndex`
 
-- `new LibraryIndex(path)` opens the index and migrates it in place to schema v3. An older index (v1 or v2) is first copied with the SQLite backup API to `{path}.v{N}-backup`. A newer schema throws `LibraryIndexException`. Do not delete the backup automatically.
+- `new LibraryIndex(path)` opens the index and migrates it in place to schema v4 in one transaction. An older index (v1 to v3) is first copied with the SQLite backup API to `{path}.v{N}-backup` (written to `.tmp`, verified with `quick_check` and `user_version`, then renamed). A newer schema throws `LibraryIndexException`. Do not delete the backup automatically.
+- Fuzzy Global search: `Search(query, limit = 500, offset = 0, fuzzy = true)`. Fuzzy mode tolerates typos and reordered words and ranks exact phrases first. `fuzzy: false` requires the whole normalized query as a substring. Both modes are deterministic, so pages never repeat or skip a result. The query must have 3 or more characters, else `GlobalSearchException(QueryTooShort)`.
+- Search documents live in `search_documents` with an FTS5 `unicode61` index of three-letter grams (`search_document_fts`). SQL triggers queue new and renamed videos in `search_dirty` and remove deleted ones. `BuildSearchDocuments()` indexes the queue in batches of 500. `Search` and `SaveSearchAliases` do it on demand, so call `BuildSearchDocuments()` from a background task after migration to avoid a first-search delay (about 4 s for 114,000 videos).
+- `SaveSearchAliases(titles)` adds the title name and the provider title to each version's document. `EntertainmentStore` calls it after every catalogue reload and every enrichment.
+- `FuzzySearch` (static): `Normalize`, `MatchExpression` (at most 64 quoted grams), `IndexGrams`, `Score`, `EditDistance`.
+- `AppSettings.FuzzyGlobalSearch` (default true) stores the fuzzy/exact choice in `Myra.json`.
 - Existing members are unchanged: `Search`, `SynchronizeSources`, `NeedsRefresh`, `LastRefresh`, `VideoCount`, `Upsert`, `CachedMetadata`, `SaveMetadata`, `SavePlaybackPosition`, `PlaybackPosition`.
 - New members:
   - `Revision()` – catalogue revision. It changes when published content, sources or metadata change.
@@ -89,7 +94,8 @@ await controller.LoadFolderRowsAsync(roots);           // then read controller.F
 - `EntertainmentTitle` – `Id` ("movie|name|year", "folder|…", "file|…"), `DisplayName`, `Year`, `Kind`, `Versions`, `Metadata`, `PosterUrl`, `ResumeVersion`, `LatestReleaseDate`.
 - `EntertainmentGrouping.Group(versions, corrections)` – release grouping rules from macOS.
 - `EntertainmentEpisodeGroup.Groups(versions)`, `EntertainmentSeason.Seasons(versions)` – season cards and episode rows ("Season 1 · Episode 01", "Other files").
-- `EntertainmentPick.Select(filtered, watched, currentPickId)` and `CanPick(...)` – Pick Something.
+- `EntertainmentPick.Select(filtered, watched, currentPickId)` and `CanPick(...)` – Pick Something. Home enables Pick once the projection matches the current filters (`HomeViewModel.CanPick`); when every match is watched the Pick window offers Reset Home Filters.
+- `EntertainmentMetadata.RuntimeMinutes` (nullable): TMDB movie runtime or first episode runtime. Null means unknown; unknown runtimes stay eligible for picks.
 - `MediaIdentity.Parse(filename)` – title, year, season, episode; `CacheKey`.
 
 ### `EntertainmentStore`

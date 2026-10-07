@@ -133,6 +133,9 @@
               <Button Content="Cancel" Command="{Binding CancelGlobalSearchCommand}" IsVisible="{Binding IsGlobalSearching}" Padding="8,2" />
             </StackPanel>
             <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="0" VerticalAlignment="Center">
+              <ToggleButton x:Name="FuzzyToggle" Content="Fuzzy" IsChecked="{Binding FuzzyGlobalSearch}" IsVisible="{Binding IsGlobalScope}"
+                            Padding="10,3" Margin="0,0,10,0" ToolTip.Tip="{Binding SearchModeHint}"
+                            AutomationProperties.Name="Fuzzy global search" />
               <RadioButton GroupName="Scope" Content="Current" IsChecked="{Binding !IsGlobalScope}" Margin="0,0,6,0" />
               <RadioButton GroupName="Scope" Content="Global" IsChecked="{Binding IsGlobalScope}" />
             </StackPanel>

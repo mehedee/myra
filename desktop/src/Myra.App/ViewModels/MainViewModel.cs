@@ -112,6 +112,24 @@ public sealed partial class MainViewModel : ObservableObject
     [ObservableProperty] private string _searchText = "";
     [ObservableProperty] [NotifyPropertyChangedFor(nameof(ShowingGlobalResults), nameof(ShowingBrowser), nameof(SearchWatermark))]
     private bool _isGlobalScope = true;
+    public bool FuzzyGlobalSearch
+    {
+        get => Store.Settings.FuzzyGlobalSearch;
+        set
+        {
+            if (Store.Settings.FuzzyGlobalSearch == value) return;
+            Store.Settings.FuzzyGlobalSearch = value;
+            SaveStore();
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(SearchModeHint));
+            if (ShowingGlobalResults) StartGlobalSearch();
+        }
+    }
+
+    public string SearchModeHint => FuzzyGlobalSearch
+        ? "Fuzzy: matches typos and reordered title words. Turn off for exact matching."
+        : "Exact: the whole query must appear in the file name or title. Turn on for fuzzy matching.";
+
     [ObservableProperty] private DirectorySortField _sortField = DirectorySortField.Name;
     [ObservableProperty] private bool _sortAscending = true;
     [ObservableProperty] [NotifyPropertyChangedFor(nameof(HasSelection))] private int _selectedCount;
@@ -560,7 +578,8 @@ public sealed partial class MainViewModel : ObservableObject
         {
             if (debounce) await Task.Delay(150, token);
             var offset = _globalOffset;
-            var page = await Task.Run(() => _services.Index.Search(query, 500, offset), token);
+            var fuzzy = FuzzyGlobalSearch;
+            var page = await Task.Run(() => _services.Index.Search(query, 500, offset, fuzzy), token);
             if (token.IsCancellationRequested) return;
             foreach (var result in page)
             {
@@ -574,7 +593,7 @@ public sealed partial class MainViewModel : ObservableObject
             _globalOffset += page.Count;
             CanLoadMoreGlobal = page.Count == 500;
             GlobalStatus = GlobalResults.Count == 0
-                ? (IsIndexing ? "No matches yet. Indexing is still running…" : $"No video filename matched “{query}”.")
+                ? (IsIndexing ? "No matches yet. Indexing is still running…" : $"No indexed title matched “{query}”.")
                 : $"{GlobalResults.Count}{(CanLoadMoreGlobal ? "+" : "")} matching videos";
             UpdateSelectedCount();
         }
