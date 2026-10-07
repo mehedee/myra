@@ -12,6 +12,12 @@ public sealed class AppServices
         Aria2 = new Aria2Controller();
         Downloads = new DownloadManager(Store, Aria2, new DownloadPlanner(Directory));
         PlayerState = PlayerPersonalState.Load();
+        Secrets = SecretStore.CreateDefault();
+        IndexRefresh = new IndexRefreshController(() => Index, new DirectoryService()) { IsPlaying = () => IsPlaying };
+        Entertainment = new EntertainmentStore(() => Index, secrets: Secrets, isIndexing: () => IndexRefresh.IsRefreshing);
+        Metadata = new MetadataService();
+        Subtitles = new OpenSubtitlesService();
+        SubtitleCache = new SubtitleCache();
     }
 
     public AppStore Store { get; }
@@ -19,6 +25,12 @@ public sealed class AppServices
     public Aria2Controller Aria2 { get; }
     public DownloadManager Downloads { get; }
     public PlayerPersonalState PlayerState { get; }
+    public ISecretStore Secrets { get; }
+    public IndexRefreshController IndexRefresh { get; }
+    public EntertainmentStore Entertainment { get; }
+    public MetadataService Metadata { get; }
+    public OpenSubtitlesService Subtitles { get; }
+    public SubtitleCache SubtitleCache { get; }
 
     private LibraryIndex? _index;
     private readonly Lock _indexLock = new();
