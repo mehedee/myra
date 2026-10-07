@@ -140,7 +140,8 @@ public class PersonalLibraryTests
         var transfer = new PersonalLibraryTransfer(store, fixture.Store, () => player, state => player = state);
         var result = transfer.Import(archive, replace: false, backupDirectory: fixture.Folder);
 
-        Assert.True(File.Exists(result.FullBackupPath));
+        Assert.True(Directory.Exists(result.FullBackupPath));
+        Assert.True(File.Exists(Path.Combine(result.FullBackupPath, "Myra.json")));
         Assert.True(File.Exists(result.PersonalBackupPath));
         Assert.Contains("Previous download folder", result.Message);
         Assert.Contains("movie|local|2000", fixture.Store.Personal.Watched);

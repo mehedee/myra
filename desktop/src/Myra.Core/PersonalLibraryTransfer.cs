@@ -64,6 +64,7 @@ public sealed record PersonalImportPreview(EntertainmentArchive Archive)
         + $"{History} history • {MatchCorrections} match corrections • {MarkerConfigurations} skip marker configurations";
 }
 
+/// FullBackupPath is the "Myra-before-import-{id}" folder with the complete pre-import state.
 public sealed record PersonalImportResult(string FullBackupPath, string? PersonalBackupPath, string? PreviousDownloadDirectory)
 {
     public string Message => PreviousDownloadDirectory is { } path
@@ -104,7 +105,7 @@ public sealed partial class PersonalLibraryTransfer(AppStore store, Entertainmen
     [GeneratedRegex("^[0-9]+([KM])?$")]
     private static partial Regex SpeedLimitPattern();
 
-    /// Validates, saves "Myra-before-import-{id}.json" (a full export) in backupDirectory, then applies the
+    /// Validates, saves a "Myra-before-import-{id}" folder (see WriteFullBackup) in backupDirectory, then applies the
     /// archive. On failure the sources, settings and personal data are restored and the error is rethrown.
     public PersonalImportResult Import(EntertainmentArchive raw, bool replace, string? backupDirectory = null)
     {
@@ -117,7 +118,6 @@ public sealed partial class PersonalLibraryTransfer(AppStore store, Entertainmen
                 throw new InvalidImportException("Invalid download or appearance preferences.");
         }
 
-        var original = Export();
         var previousPersonal = entertainment.Personal.Clone();
         var previousPlayer = player().Clone();
         var existingPortable = PortableSources();
@@ -125,10 +125,7 @@ public sealed partial class PersonalLibraryTransfer(AppStore store, Entertainmen
         var settings = store.Settings.Snapshot();
         var previousTheme = store.Settings.Theme;
 
-        var folder = backupDirectory ?? AppPaths.DataDirectory;
-        var backup = Path.Combine(folder, $"Myra-before-import-{Guid.NewGuid().ToString().ToUpperInvariant()}.json");
-        Directory.CreateDirectory(folder);
-        File.WriteAllBytes(backup, original);
+        var backup = WriteFullBackup(backupDirectory ?? AppPaths.DataDirectory, previousPlayer);
 
         string? personalBackup = null;
         try
@@ -204,6 +201,28 @@ public sealed partial class PersonalLibraryTransfer(AppStore store, Entertainmen
             throw;
         }
         return new PersonalImportResult(backup, personalBackup, archive.AppPreferences?.PreviousDownloadDirectory);
+    }
+
+    /// Saves the complete local state before an import changes it: Myra.json and PlayerPreferences.json
+    /// as they are in memory (source URLs keep their credentials and query strings), a raw copy of
+    /// EntertainmentPersonal.json, and the portable export when one can be built. Returns the folder.
+    private string WriteFullBackup(string directory, PlayerPersonalState currentPlayer)
+    {
+        var folder = Path.Combine(directory, $"Myra-before-import-{Guid.NewGuid().ToString().ToUpperInvariant()}");
+        Directory.CreateDirectory(folder);
+        store.SaveCopy(Path.Combine(folder, "Myra.json"));
+        currentPlayer.Save(Path.Combine(folder, "PlayerPreferences.json"));
+        if (File.Exists(entertainment.StoragePath))
+            File.Copy(entertainment.StoragePath, Path.Combine(folder, Path.GetFileName(entertainment.StoragePath)));
+        try
+        {
+            AtomicFile.WriteAllBytes(Path.Combine(folder, "PersonalLibrary-export.json"), Export());
+        }
+        catch (InvalidImportException)
+        {
+            // Duplicate portable references; the raw files above remain the complete backup.
+        }
+        return folder;
     }
 
     private static bool TryTheme(string value, out AppThemeMode theme)
