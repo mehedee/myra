@@ -97,7 +97,7 @@ public sealed class IndexRefreshTests : IDisposable
             Assert.Equal(1, rows.Single(r => r.Scope.Folder == source.Url).Files);
             Assert.Equal(1, rows.Single(r => r.Scope.Folder.AbsolutePath.EndsWith("/Films/")).Files);
         }
-        Assert.Equal(3, UserVersion(path));
+        Assert.Equal(4, UserVersion(path));
         var backup = path + ".v2-backup";
         Assert.True(File.Exists(backup));
         Assert.Equal(2, UserVersion(backup));
@@ -198,17 +198,17 @@ public sealed class IndexRefreshTests : IDisposable
         Assert.Equal(20, index.PlaybackPosition(movie.Entry.Url));
         Assert.True(File.Exists(path + ".v1-backup"));
         Assert.Equal(DateTimeOffset.FromUnixTimeSeconds(777), index.Inventory().Single().FirstDiscovered);
-        Assert.Equal(3, UserVersion(path));
+        Assert.Equal(4, UserVersion(path));
     }
 
     [Fact]
     public void NewerSchemaIsRejectedWithoutChanges()
     {
         var path = DatabasePath();
-        ExecuteRaw(path, "CREATE TABLE future(x); PRAGMA user_version=4;");
+        ExecuteRaw(path, "CREATE TABLE future(x); PRAGMA user_version=5;");
         Assert.Throws<LibraryIndexException>(() => new LibraryIndex(path));
-        Assert.Equal(4, UserVersion(path));
-        Assert.False(File.Exists(path + ".v4-backup"));
+        Assert.Equal(5, UserVersion(path));
+        Assert.False(File.Exists(path + ".v5-backup"));
     }
 
     [Fact]

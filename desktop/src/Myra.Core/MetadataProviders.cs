@@ -78,6 +78,8 @@ public sealed class DiscoveryService
         [JsonPropertyName("first_air_date")] public string? FirstAirDate { get; set; }
         [JsonPropertyName("original_language")] public string? OriginalLanguage { get; set; }
         [JsonPropertyName("genres")] public List<GenreReply>? Genres { get; set; }
+        [JsonPropertyName("runtime")] public int? Runtime { get; set; }
+        [JsonPropertyName("episode_run_time")] public List<int>? EpisodeRunTime { get; set; }
     }
 
     private async Task<T> RequestAsync<T>(string path, IEnumerable<(string Name, string Value)> query, string token, CancellationToken cancellationToken)
@@ -199,6 +201,7 @@ public sealed class DiscoveryService
             ReleaseDate = item.ReleaseDate ?? item.FirstAirDate,
             Genres = item.Genres?.Select(g => g.Name).ToList() ?? [],
             Language = item.OriginalLanguage ?? "",
+            RuntimeMinutes = item.Runtime ?? item.EpisodeRunTime?.FirstOrDefault(),
             EpisodeReleaseDates = dates,
         };
         var json = JsonSerializer.Serialize(result, SwiftJson.Options);

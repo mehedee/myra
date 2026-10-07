@@ -9,15 +9,18 @@ public sealed class LibraryIndexException(string message, Exception? inner = nul
 /// by a lock; callers run it off the UI thread.
 ///
 /// Schema history (shared with macOS): v1 videos/playback; v2 adds videos.first_discovered;
-/// v3 adds folders (directory snapshots) and index_state (catalogue revision). An older index is
-/// backed up with the SQLite backup API to "{path}.v{N}-backup" before it is migrated in place.
+/// v3 adds folders (directory snapshots) and index_state (catalogue revision); v4 adds the fuzzy-search
+/// documents (search_documents, an FTS5 unicode61 trigram index kept current by SQL triggers, and a
+/// search_dirty queue). An older index is backed up with the SQLite backup API to "{path}.v{N}-backup"
+/// (written to ".tmp", verified, then renamed) before it is migrated in place in one transaction.
 public sealed class LibraryIndex : IDisposable
 {
-    public const int SchemaVersion = 3;
+    public const int SchemaVersion = 4;
 
     private readonly SqliteConnection _connection;
     private readonly Lock _lock = new();
     private readonly bool _hasTrigram;
+    private readonly bool _hasSearchSchema;
 
     public LibraryIndex(string path, bool searchable = true)
     {
@@ -33,6 +36,7 @@ public sealed class LibraryIndex : IDisposable
             if (version > SchemaVersion) throw new LibraryIndexException("This index was created by a newer Myra version.");
             if (version is > 0 and < SchemaVersion) Backup(version);
             _hasTrigram = Migrate(searchable);
+            _hasSearchSchema = searchable;
         }
         catch
         {
@@ -151,6 +155,9 @@ public sealed class LibraryIndex : IDisposable
                 CREATE TABLE IF NOT EXISTS index_state(id INTEGER PRIMARY KEY CHECK(id=1), revision INTEGER NOT NULL);
                 INSERT OR IGNORE INTO index_state VALUES(1,0);
                 """);
+            // v4: portable fuzzy search. Created in the same transaction as the version bump, so a
+            // failure leaves the v3 index untouched. Every existing video is queued for indexing.
+            if (searchable) CreateSearchSchema();
             Execute($"PRAGMA user_version={SchemaVersion}");
         });
 
@@ -178,6 +185,34 @@ public sealed class LibraryIndex : IDisposable
         {
             return false;
         }
+    }
+
+    private void CreateSearchSchema()
+    {
+        var existed = Scalar("SELECT 1 FROM sqlite_master WHERE name='search_documents'") is not null;
+        Execute("""
+            CREATE TABLE IF NOT EXISTS search_documents(category TEXT NOT NULL,url TEXT NOT NULL,
+              name TEXT NOT NULL,aliases TEXT NOT NULL DEFAULT '',normalized TEXT NOT NULL,
+              grams TEXT NOT NULL, UNIQUE(category,url));
+            CREATE VIRTUAL TABLE IF NOT EXISTS search_document_fts USING fts5(grams,
+              content='search_documents',content_rowid='rowid',tokenize='unicode61');
+            CREATE TABLE IF NOT EXISTS search_dirty(category TEXT NOT NULL,url TEXT NOT NULL,PRIMARY KEY(category,url));
+            CREATE TRIGGER IF NOT EXISTS search_video_insert AFTER INSERT ON videos BEGIN
+              INSERT OR IGNORE INTO search_dirty VALUES(new.category,new.url); END;
+            CREATE TRIGGER IF NOT EXISTS search_video_update AFTER UPDATE OF name ON videos WHEN new.name != old.name BEGIN
+              INSERT OR IGNORE INTO search_dirty VALUES(new.category,new.url); END;
+            CREATE TRIGGER IF NOT EXISTS search_video_delete AFTER DELETE ON videos BEGIN
+              DELETE FROM search_documents WHERE category=old.category AND url=old.url;
+              DELETE FROM search_dirty WHERE category=old.category AND url=old.url; END;
+            CREATE TRIGGER IF NOT EXISTS search_doc_insert AFTER INSERT ON search_documents BEGIN
+              INSERT INTO search_document_fts(rowid,grams) VALUES(new.rowid,new.grams); END;
+            CREATE TRIGGER IF NOT EXISTS search_doc_delete AFTER DELETE ON search_documents BEGIN
+              INSERT INTO search_document_fts(search_document_fts,rowid,grams) VALUES('delete',old.rowid,old.grams); END;
+            CREATE TRIGGER IF NOT EXISTS search_doc_update AFTER UPDATE ON search_documents BEGIN
+              INSERT INTO search_document_fts(search_document_fts,rowid,grams) VALUES('delete',old.rowid,old.grams);
+              INSERT INTO search_document_fts(rowid,grams) VALUES(new.rowid,new.grams); END;
+            """);
+        if (!existed) Execute("INSERT OR IGNORE INTO search_dirty SELECT category,url FROM videos");
     }
 
     public static string Normalized(string value) => value.ToLowerInvariant();
@@ -447,27 +482,147 @@ public sealed class LibraryIndex : IDisposable
         return summary;
     }
 
-    public List<GlobalSearchResult> Search(string rawQuery, int limit = 500, int offset = 0)
+    /// Rows ranked per fuzzy query. More exact-substring matches than this fall back to exact mode.
+    private const int FuzzyCandidateLimit = 4096;
+
+    /// Global search. Fuzzy (default) tolerates typos and reordered words and ranks exact phrases first;
+    /// exact requires the whole normalized query as a substring. Both are deterministic, so
+    /// limit/offset pages never repeat or skip a result.
+    public List<GlobalSearchResult> Search(string rawQuery, int limit = 500, int offset = 0, bool fuzzy = true)
     {
         var query = rawQuery.Trim();
         if (query.Length < 3) throw new GlobalSearchException(GlobalSearchErrorKind.QueryTooShort);
-        var useFts = _hasTrigram && !query.Contains('\n');
-        var source = useFts ? "videos JOIN video_fts ON videos.rowid=video_fts.rowid" : "videos";
-        var predicate = useFts ? "video_fts MATCH $a" : "instr(search_name,$a)>0";
-        var normalized = Normalized(query);
-        // MATCH receives a quoted literal, so query text never acts as FTS syntax.
-        var term = useFts ? "\"" + normalized.Replace("\"", "\"\"") + "\"" : normalized;
+        var normalized = FuzzySearch.Normalize(query);
+        if (normalized.Length == 0) return [];
+        var expression = FuzzySearch.MatchExpression(query);
+        var indexed = expression is not null;
+        var approximate = fuzzy && indexed;
+        var pageSize = Math.Clamp(limit, 1, 500);
+        var start = Math.Max(0, offset);
         lock (_lock)
         {
+            BuildPendingSearchDocuments();
+            var source = indexed
+                ? "videos JOIN search_documents d ON videos.category=d.category AND videos.url=d.url JOIN search_document_fts f ON d.rowid=f.rowid"
+                : "videos JOIN search_documents d ON videos.category=d.category AND videos.url=d.url";
+            var predicate = indexed
+                ? (approximate ? "search_document_fts MATCH $a" : "search_document_fts MATCH $a AND instr(d.normalized,$b)>0")
+                : "instr(d.normalized,$b)>0";
+            var order = approximate ? "CASE WHEN instr(d.normalized,$b)>0 THEN 0 ELSE 1 END,bm25(search_document_fts)," : "";
             using var command = Command($"""
-                SELECT category,category_name,root,videos.url,name,relative_path,artwork,size,modified
-                FROM {source} WHERE {predicate} ORDER BY category_name,name,videos.url LIMIT $b OFFSET $c
-                """, term, Math.Clamp(limit, 1, 500), Math.Max(0, offset));
+                SELECT videos.category,category_name,root,videos.url,videos.name,relative_path,artwork,size,modified,d.aliases
+                FROM {source} WHERE {predicate}
+                ORDER BY {order}category_name,videos.name,videos.url LIMIT $c OFFSET $d
+                """);
+            if (indexed) command.Parameters.AddWithValue("$a", approximate ? expression! : expression!.Replace(" OR ", " AND "));
+            command.Parameters.AddWithValue("$b", normalized);
+            command.Parameters.AddWithValue("$c", approximate ? FuzzyCandidateLimit : pageSize);
+            command.Parameters.AddWithValue("$d", approximate ? 0 : start);
             var results = new List<GlobalSearchResult>();
-            using var reader = command.ExecuteReader();
-            while (reader.Read())
-                if (ReadResult(reader) is { } result) results.Add(result);
-            return results;
+            var aliases = new Dictionary<GlobalSearchResultId, string>();
+            using (var reader = command.ExecuteReader())
+                while (reader.Read())
+                    if (ReadResult(reader) is { } result)
+                    {
+                        aliases[result.Id] = reader.GetString(9);
+                        results.Add(result);
+                    }
+            if (!approximate) return results;
+            if (results.Count == FuzzyCandidateLimit
+                && Convert.ToInt64(Scalar("SELECT COUNT(*) FROM search_documents WHERE instr(normalized,$a)>0", normalized)) >= FuzzyCandidateLimit)
+                return Search(rawQuery, limit, offset, fuzzy: false);
+
+            return results
+                .Select(result => (Result: result, Score: new[] { result.Entry.Name }
+                    .Concat(aliases[result.Id].Split('\n', StringSplitOptions.RemoveEmptyEntries))
+                    .Select(name => FuzzySearch.Score(query, name)).Where(score => score is not null).Min()))
+                .Where(item => item.Score is not null)
+                .OrderBy(item => item.Score)
+                .ThenBy(item => item.Result.CategoryName + "\0" + item.Result.Entry.Name + "\0" + item.Result.Entry.Url.AbsoluteUri, StringComparer.Ordinal)
+                .Skip(start).Take(pageSize).Select(item => item.Result).ToList();
+        }
+    }
+
+    /// Indexes new and renamed filenames in batches of 500. Query time never rereads the whole catalogue.
+    /// Safe to call from a background task: it is a no-op when nothing is queued.
+    public void BuildSearchDocuments(CancellationToken cancellationToken = default)
+    {
+        lock (_lock) BuildPendingSearchDocuments(cancellationToken);
+    }
+
+    private void BuildPendingSearchDocuments(CancellationToken cancellationToken = default)
+    {
+        if (!_hasSearchSchema) return;
+        while (true)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var rows = new List<(string Category, string Url, string Name, string Aliases)>();
+            using (var pending = Command("""
+                SELECT v.category,v.url,v.name,COALESCE(d.aliases,'') FROM search_dirty q
+                JOIN videos v ON v.category=q.category AND v.url=q.url
+                LEFT JOIN search_documents d ON d.category=v.category AND d.url=v.url LIMIT 500
+                """))
+            using (var reader = pending.ExecuteReader())
+                while (reader.Read()) rows.Add((reader.GetString(0), reader.GetString(1), reader.GetString(2), reader.GetString(3)));
+            if (rows.Count == 0) return;
+            Transaction(() =>
+            {
+                using var insert = Command("""
+                    INSERT INTO search_documents(category,url,name,aliases,normalized,grams) VALUES($a,$b,$c,$d,$e,$f)
+                    ON CONFLICT(category,url) DO UPDATE SET name=excluded.name,aliases=excluded.aliases,
+                      normalized=excluded.normalized,grams=excluded.grams
+                    """);
+                var values = "abcdef".Select(c => insert.Parameters.Add("$" + c, SqliteType.Text)).ToArray();
+                using var remove = Command("DELETE FROM search_dirty WHERE category=$a AND url=$b");
+                var keys = "ab".Select(c => remove.Parameters.Add("$" + c, SqliteType.Text)).ToArray();
+                foreach (var row in rows)
+                {
+                    var text = row.Name + " " + row.Aliases;
+                    string[] fields = [row.Category, row.Url, row.Name, row.Aliases, FuzzySearch.Normalize(text), FuzzySearch.IndexGrams(text)];
+                    for (var i = 0; i < fields.Length; i++) values[i].Value = fields[i];
+                    insert.ExecuteNonQuery();
+                    keys[0].Value = row.Category;
+                    keys[1].Value = row.Url;
+                    remove.ExecuteNonQuery();
+                }
+            });
+        }
+    }
+
+    /// Associates provider and corrected display titles with the original file identities so Global
+    /// search finds "Amelie" for "Le.Fabuleux.Destin.2001.mkv". Idempotent; unchanged aliases cost no write.
+    public void SaveSearchAliases(IEnumerable<EntertainmentTitle> titles, CancellationToken cancellationToken = default)
+    {
+        foreach (var chunk in titles.Chunk(2000))
+        {
+            lock (_lock)
+            {
+                BuildPendingSearchDocuments(cancellationToken);
+                if (!_hasSearchSchema) return;
+                Transaction(() =>
+                {
+                    using var update = Command("UPDATE search_documents SET aliases=$a WHERE category=$b AND url=$c AND aliases<>$a");
+                    var parameters = "abc".Select(c => update.Parameters.Add("$" + c, SqliteType.Text)).ToArray();
+                    using var dirty = Command("INSERT OR IGNORE INTO search_dirty VALUES($a,$b)");
+                    var keys = "ab".Select(c => dirty.Parameters.Add("$" + c, SqliteType.Text)).ToArray();
+                    foreach (var title in chunk)
+                    {
+                        var alias = string.Join('\n', new[] { title.Name, title.Metadata?.Title ?? "" }.Where(name => name.Length > 0));
+                        foreach (var version in title.Versions)
+                        {
+                            cancellationToken.ThrowIfCancellationRequested();
+                            parameters[0].Value = alias;
+                            parameters[1].Value = SourceKey(version.Media.CategoryId);
+                            parameters[2].Value = version.Media.Entry.Url.AbsoluteUri;
+                            if (update.ExecuteNonQuery() == 0) continue;
+                            keys[0].Value = parameters[1].Value;
+                            keys[1].Value = parameters[2].Value;
+                            dirty.ExecuteNonQuery();
+                        }
+                    }
+                }, cancellationToken);
+                BuildPendingSearchDocuments(cancellationToken);
+            }
         }
     }
 

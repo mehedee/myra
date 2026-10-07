@@ -36,6 +36,8 @@ public sealed record EntertainmentMetadata
     public string? ReleaseDate { get; init; }
     public IReadOnlyList<string> Genres { get; init; } = [];
     public string Language { get; init; } = "";
+    /// Movie runtime or the first episode runtime from TMDB. Null when unknown; unknown is never a reason to exclude a title.
+    public int? RuntimeMinutes { get; init; }
     /// "season|episode" → air date (yyyy-MM-dd), only for episodes present in the index.
     public Dictionary<string, string>? EpisodeReleaseDates { get; init; }
 

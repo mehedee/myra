@@ -106,11 +106,17 @@ public sealed partial class EntertainmentStore
     {
         _stopping.Cancel();
         Task? loading;
-        lock (_lock) loading = _loading;
+        Task aliases;
+        lock (_lock)
+        {
+            loading = _loading;
+            aliases = _aliasSave;
+        }
         var deadline = Environment.TickCount64 + (long)timeout.TotalMilliseconds;
         try
         {
             if (loading is not null && !loading.Wait(timeout)) return false;
+            if (!aliases.Wait(Math.Max(0, (int)(deadline - Environment.TickCount64)))) return false;
         }
         catch (AggregateException)
         {
@@ -168,6 +174,7 @@ public sealed partial class EntertainmentStore
                 if (!again)
                 {
                     RaiseChanged();
+                    SaveSearchAliases(prepared.Titles);
                     DiscoverEpisodes();
                 }
             }
@@ -187,6 +194,28 @@ public sealed partial class EntertainmentStore
         bool enrich;
         lock (_lock) enrich = _automaticEnrichment && _enrichmentIds.Count > 0;
         if (enrich && HasTmdbToken()) _ = EnrichCoreAsync(_stopping.Token);
+    }
+
+    /// Lets Global search find provider and corrected titles ("Amelie" for a French file name). Runs once
+    /// at a time at low priority; a failure only means aliases are refreshed by the next reload.
+    private Task _aliasSave = Task.CompletedTask;
+
+    private void SaveSearchAliases(IReadOnlyList<EntertainmentTitle> titles)
+    {
+        lock (_lock)
+        {
+            var stopping = _stopping.Token;
+            _aliasSave = _aliasSave.ContinueWith(_ =>
+            {
+                try
+                {
+                    _index().SaveSearchAliases(titles, stopping);
+                }
+                catch (Exception error) when (error is OperationCanceledException or LibraryIndexException or Microsoft.Data.Sqlite.SqliteException or ObjectDisposedException)
+                {
+                }
+            }, CancellationToken.None, TaskContinuationOptions.None, TaskScheduler.Default);
+        }
     }
 
     private bool HasTmdbToken()
@@ -244,6 +273,7 @@ public sealed partial class EntertainmentStore
                         _enrichmentIds.Remove(target.Id);
                     }
                     RaiseChanged();
+                    SaveSearchAliases([target with { Metadata = metadata }]);
                 }
                 catch (DiscoveryException error) when (error.Kind == DiscoveryErrorKind.Ambiguous)
                 {
