@@ -169,7 +169,3 @@ It also updates `Response` and `ErrorMessage`. A cancelled request leaves both e
 - `RestoreReviewedAiSnapshot(snapshot)` – keeps current history and known episodes. Returns true when the catalogue must be reloaded.
 
 Use them through `AiService.ApplyAsync` / `UndoAsync`. Undo is refused when the personal data or feedback changed after the action, or for a different store.
-
-## Requested changes outside this module
-
-- `EntertainmentMetadata` has no runtime. Add `public int? RuntimeMinutes { get; init; }` (JSON `runtimeMinutes`, as in the macOS cache) and fill it from TMDB `runtime` / `episode_run_time[0]`. `AiContext.Runtime` reads it automatically when present. Until then, only played files with a known duration have a runtime for timed plans.

@@ -1,5 +1,4 @@
 using System.Globalization;
-using System.Reflection;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
@@ -56,15 +55,7 @@ public sealed partial record AiContext(string Prompt, IReadOnlyDictionary<string
         return title.Metadata is { } metadata && MetadataRuntime(metadata) is { } minutes && minutes > 0 ? minutes : null;
     }
 
-    // EntertainmentMetadata has no runtime yet (owned elsewhere). When a RuntimeMinutes (int?) property
-    // is added, it is used automatically. See docs/ai-core-api.md, "Requested changes".
-    private static readonly PropertyInfo? RuntimeProperty = typeof(EntertainmentMetadata).GetProperty("RuntimeMinutes");
-
-    private static int? MetadataRuntime(EntertainmentMetadata metadata) => RuntimeProperty?.GetValue(metadata) switch
-    {
-        int value => value,
-        _ => null,
-    };
+    private static int? MetadataRuntime(EntertainmentMetadata metadata) => metadata.RuntimeMinutes;
 
     public static AiContext Prepare(AiContextInput input, CancellationToken cancellationToken = default) =>
         Prepare(input, DefaultCandidateLimit, cancellationToken);
