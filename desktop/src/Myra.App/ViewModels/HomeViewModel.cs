@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Collections.ObjectModel;
 using System.Globalization;
 using Avalonia.Threading;
@@ -17,8 +18,10 @@ public sealed record RatingChoice(string Label, double Value)
     public override string ToString() => Label;
 }
 
-/// Home (macOS HomeView): filters, shelves and Pick Something. The projection runs off the UI thread,
-/// debounced by 100 ms, and re-runs when filters or the store change.
+/// Home (macOS HomeView): filters, shelves and Pick Something. The projection and the card view models
+/// are built off the UI thread, debounced (100 ms for filters, 500 ms for store changes such as
+/// playback progress and enrichment). Only the first 60 cards of a shelf exist until Show all.
+/// The UI thread then replaces only the cards whose displayed values changed.
 public sealed partial class HomeViewModel : ObservableObject
 {
     private readonly MainViewModel _main;
@@ -41,7 +44,8 @@ public sealed partial class HomeViewModel : ObservableObject
             OnPropertyChanged(nameof(ErrorMessage));
             OnPropertyChanged(nameof(IsEnriching));
             OnPropertyChanged(nameof(UpdateMetadataLabel));
-            Schedule();
+            // Progress is recorded every 10 s and enrichment changes one title at a time: coalesce them.
+            Schedule(StoreChangeDelay);
         });
     }
 
@@ -133,8 +137,21 @@ public sealed partial class HomeViewModel : ObservableObject
     partial void OnHideWatchedChanged(bool value) => Schedule();
     partial void OnTitleCountChanged(int value) => OnPropertyChanged(nameof(TitleCountText));
 
+    private static readonly TimeSpan StoreChangeDelay = TimeSpan.FromMilliseconds(500);
+
+    /// FollowedEpisodes.EpisodeId by file name. Parsing is costly and a name always gives the same ID.
+    private readonly ConcurrentDictionary<string, string> _episodeIds = new();
+
+    internal string EpisodeId(EntertainmentVersion version)
+    {
+        if (_episodeIds.Count > 500_000) _episodeIds.Clear();
+        return _episodeIds.GetOrAdd(version.Media.Entry.Name, _ => FollowedEpisodes.EpisodeId(version));
+    }
+
     /// Re-projects Home after 100 ms; a newer request cancels an older one.
-    public void Schedule()
+    public void Schedule() => Schedule(TimeSpan.FromMilliseconds(100));
+
+    private void Schedule(TimeSpan delay)
     {
         _projection?.Cancel();
         var cancellation = _projection = new CancellationTokenSource();
@@ -143,20 +160,31 @@ public sealed partial class HomeViewModel : ObservableObject
         var personal = Store.Personal;
         var newEpisodes = Store.NewEpisodeIds;
         var revision = Store.ProjectionRevision;
+        var expanded = Shelves.Where(s => s.IsExpanded).Select(s => s.Key).ToHashSet();
         IsPreparing = true;
         _ = Task.Run(async () =>
         {
-            await Task.Delay(100, cancellation.Token);
+            await Task.Delay(delay, cancellation.Token);
             var projection = HomeProjection.Prepare(catalogue, personal, filter, cancellation.Token);
-            var shelves = HomeProjection.Shelves(projection, personal, newEpisodes);
-            return (projection, shelves);
+            var shelves = HomeProjection.Shelves(projection, personal, newEpisodes, EpisodeId);
+            var prepared = new List<HomeShelfCards>(shelves.Count);
+            foreach (var shelf in shelves)
+            {
+                cancellation.Token.ThrowIfCancellationRequested();
+                var cards = new HomeShelfCards(shelf, title => new HomeCardViewModel(this, title, personal, newEpisodes));
+                // Create the cards that are shown now; personal shelves are always shown in full.
+                var personalShelf = shelf.Kind is HomeShelfKind.Watchlist or HomeShelfKind.Collection;
+                cards.Take(personalShelf || expanded.Contains(cards.Key) ? cards.Count : HomeShelf.VisibleLimit);
+                prepared.Add(cards);
+            }
+            return (projection, prepared);
         }, cancellation.Token).ContinueWith(task =>
         {
             if (cancellation.IsCancellationRequested || !task.IsCompletedSuccessfully) return;
             Dispatcher.UIThread.Post(() =>
             {
                 if (cancellation.IsCancellationRequested) return;
-                Apply(task.Result.projection, task.Result.shelves, catalogue.Count, personal, filter, revision);
+                Apply(task.Result.projection, task.Result.prepared, catalogue.Count, personal, filter, revision);
                 IsPreparing = false;
             });
         }, TaskScheduler.Default);
@@ -169,7 +197,7 @@ public sealed partial class HomeViewModel : ObservableObject
         while (IsPreparing && Environment.TickCount64 - started < timeoutMs) await Task.Delay(20);
     }
 
-    private void Apply(HomeCatalogueProjection projection, List<HomeShelf> shelves, int count, EntertainmentPersonalData personal,
+    private void Apply(HomeCatalogueProjection projection, List<HomeShelfCards> shelves, int count, EntertainmentPersonalData personal,
         HomeCatalogueFilter filter, long revision)
     {
         _prepared = projection;
@@ -191,8 +219,8 @@ public sealed partial class HomeViewModel : ObservableObject
         if (revision == _appliedRevision && filter == _appliedFilter) return;
         _appliedRevision = revision;
         _appliedFilter = filter;
-        Sync(Shelves, shelves, personal);
-        Sync(PersonalShelves, shelves.Where(s => s.Kind is HomeShelfKind.Watchlist or HomeShelfKind.Collection).ToList(), personal, expanded: true);
+        Sync(Shelves, shelves);
+        Sync(PersonalShelves, shelves.Where(s => s.Shelf.Kind is HomeShelfKind.Watchlist or HomeShelfKind.Collection).ToList(), expanded: true);
     }
 
     private static IReadOnlyList<FilterChoice> Choices(IReadOnlyList<FilterChoice> current, IReadOnlyList<string> values, string plural, string selected, bool force)
@@ -214,15 +242,14 @@ public sealed partial class HomeViewModel : ObservableObject
             OnPropertyChanged(name);
     }
 
-    private void Sync(ObservableCollection<HomeShelfViewModel> target, List<HomeShelf> shelves, EntertainmentPersonalData personal, bool expanded = false)
+    private void Sync(ObservableCollection<HomeShelfViewModel> target, List<HomeShelfCards> shelves, bool expanded = false)
     {
         var existing = target.ToDictionary(s => s.Key);
         var wanted = new List<HomeShelfViewModel>();
         foreach (var shelf in shelves)
         {
-            var key = shelf.Kind + "|" + (shelf.CollectionId?.ToString() ?? shelf.Name);
-            if (!existing.TryGetValue(key, out var model)) model = new HomeShelfViewModel(this, key) { IsExpanded = expanded };
-            model.Update(shelf, personal, Store.NewEpisodeIds);
+            if (!existing.TryGetValue(shelf.Key, out var model)) model = new HomeShelfViewModel(this, shelf.Key) { IsExpanded = expanded };
+            model.Update(shelf);
             wanted.Add(model);
         }
         if (!target.SequenceEqual(wanted))
@@ -301,10 +328,33 @@ public sealed partial class HomeViewModel : ObservableObject
     public bool IsFollowed(EntertainmentTitle title) => Store.Personal.Followed.Contains(title.Id);
 }
 
+/// Card view models for one shelf. Thread-safe: the projection creates the visible cards on a worker
+/// thread; cards past the visible limit are created only when a view asks for them (Show all).
+public sealed class HomeShelfCards(HomeShelf shelf, Func<EntertainmentTitle, HomeCardViewModel> create)
+{
+    private readonly HomeCardViewModel?[] _cards = new HomeCardViewModel?[shelf.Titles.Count];
+    private readonly Lock _lock = new();
+
+    public HomeShelf Shelf => shelf;
+    public string Key { get; } = shelf.Kind + "|" + (shelf.CollectionId?.ToString() ?? shelf.Name);
+    public int Count => _cards.Length;
+
+    /// The first count cards, created on first request.
+    public IReadOnlyList<HomeCardViewModel> Take(int count)
+    {
+        count = Math.Clamp(count, 0, _cards.Length);
+        var cards = new List<HomeCardViewModel>(count);
+        lock (_lock)
+            for (var i = 0; i < count; i++)
+                cards.Add(_cards[i] ??= create(shelf.Titles[i]));
+        return cards;
+    }
+}
+
 /// One Home row. Rows with more than 60 titles show Show all / Show fewer.
 public sealed partial class HomeShelfViewModel(HomeViewModel home, string key) : ObservableObject
 {
-    private IReadOnlyList<HomeCardViewModel> _all = [];
+    private HomeShelfCards? _cards;
 
     public HomeViewModel Home => home;
     public string Key => key;
@@ -320,13 +370,14 @@ public sealed partial class HomeShelfViewModel(HomeViewModel home, string key) :
     public bool CanExpand => Count > HomeShelf.VisibleLimit;
     public string ShowAllLabel => IsExpanded ? "Show fewer" : "Show all";
 
-    public void Update(HomeShelf shelf, EntertainmentPersonalData personal, IReadOnlySet<string> newEpisodes)
+    public void Update(HomeShelfCards cards)
     {
+        _cards = cards;
+        var shelf = cards.Shelf;
         Name = shelf.Name;
         Subtitle = shelf.Subtitle;
         EmptyMessage = shelf.EmptyMessage;
-        Count = shelf.Titles.Count;
-        _all = shelf.Titles.Select(t => new HomeCardViewModel(home, t, personal, newEpisodes)).ToList();
+        Count = cards.Count;
         OnPropertyChanged(nameof(IsEmpty));
         OnPropertyChanged(nameof(HasCards));
         OnPropertyChanged(nameof(CanExpand));
@@ -337,36 +388,84 @@ public sealed partial class HomeShelfViewModel(HomeViewModel home, string key) :
 
     [RelayCommand] private void ToggleExpanded() => IsExpanded = !IsExpanded;
 
+    /// Keeps card instances whose displayed values did not change, so their containers and posters
+    /// stay as they are; only changed positions are replaced.
     private void Fill()
     {
-        var visible = IsExpanded ? _all : _all.Take(HomeShelf.VisibleLimit).ToList();
-        Cards.Clear();
-        foreach (var card in visible) Cards.Add(card);
+        if (_cards is null) return;
+        var wanted = _cards.Take(IsExpanded ? _cards.Count : HomeShelf.VisibleLimit);
+        for (var i = 0; i < wanted.Count; i++)
+        {
+            if (i >= Cards.Count) Cards.Add(wanted[i]);
+            else if (ReferenceEquals(Cards[i], wanted[i])) continue;
+            else if (Cards[i].ShowsSameAs(wanted[i])) Cards[i].Title = wanted[i].Title;
+            else Cards[i] = wanted[i];
+        }
+        while (Cards.Count > wanted.Count) Cards.RemoveAt(Cards.Count - 1);
     }
 }
 
-/// Poster card (macOS EntertainmentCard).
-public sealed class HomeCardViewModel(HomeViewModel home, EntertainmentTitle title, EntertainmentPersonalData personal, IReadOnlySet<string> newEpisodes)
+/// Poster card (macOS EntertainmentCard). Every displayed value is computed once, off the UI thread.
+public sealed class HomeCardViewModel
 {
-    public HomeViewModel Home => home;
-    public EntertainmentTitle Title => title;
-    public string DisplayName => title.DisplayName;
-    public Uri? PosterUrl => title.PosterUrl;
-    public bool IsSeries => title.Kind == EntertainmentKind.Series;
+    private readonly Display _display;
+
+    private sealed record Display(
+        string Id, string DisplayName, Uri? PosterUrl, bool IsSeries, string YearOrKind, bool HasRating, string RatingText,
+        string RatingTip, string SourcesText, bool IsWatched, bool InWatchlist, bool HasNewEpisodes, bool HasResume,
+        double ResumePercent, string ResumeText, string PlayLabel);
+
+    public HomeCardViewModel(HomeViewModel home, EntertainmentTitle title, EntertainmentPersonalData personal, IReadOnlySet<string> newEpisodes)
+    {
+        Home = home;
+        Title = title;
+        var series = title.Kind == EntertainmentKind.Series;
+        var resume = title.ResumeVersion;
+        _display = new Display(
+            title.Id,
+            title.DisplayName,
+            title.PosterUrl,
+            series,
+            title.Year ?? (series ? "Series" : "Movie"),
+            title.Metadata is not null,
+            title.Metadata?.Rating.ToString("0.0", CultureInfo.CurrentCulture) ?? "",
+            $"TMDB rating from {title.Metadata?.VoteCount ?? 0} votes",
+            string.Join(", ", title.Versions.Select(v => v.Media.CategoryName).Distinct().Order(StringComparer.CurrentCulture)),
+            personal.Watched.Contains(title.Id),
+            personal.Watchlist.Contains(title.Id),
+            newEpisodes.Count > 0 && title.Versions.Any(v => newEpisodes.Contains(home.EpisodeId(v))),
+            resume is { Duration: > 0 },
+            resume is { Duration: > 0 } r ? Math.Min(100, 100 * r.ProgressSeconds / r.Duration) : 0,
+            resume is { } p ? $"Resume at {(int)(p.ProgressSeconds / 60)} min" : "",
+            resume is null ? "Play" : "Resume");
+    }
+
+    public HomeViewModel Home { get; }
+
+    /// The latest title for actions (Play, Details). A kept card receives the newer title when
+    /// nothing it displays changed.
+    public EntertainmentTitle Title { get; internal set; }
+
+    public string DisplayName => _display.DisplayName;
+    public Uri? PosterUrl => _display.PosterUrl;
+    public bool IsSeries => _display.IsSeries;
     public bool IsMovie => !IsSeries;
-    public string YearOrKind => title.Year ?? (IsSeries ? "Series" : "Movie");
-    public bool HasRating => title.Metadata is not null;
-    public string RatingText => title.Metadata?.Rating.ToString("0.0", CultureInfo.CurrentCulture) ?? "";
-    public string RatingTip => $"TMDB rating from {title.Metadata?.VoteCount ?? 0} votes";
-    public string SourcesText => string.Join(", ", title.Versions.Select(v => v.Media.CategoryName).Distinct().Order(StringComparer.CurrentCulture));
-    public bool IsWatched { get; } = personal.Watched.Contains(title.Id);
-    public bool InWatchlist { get; } = personal.Watchlist.Contains(title.Id);
+    public string YearOrKind => _display.YearOrKind;
+    public bool HasRating => _display.HasRating;
+    public string RatingText => _display.RatingText;
+    public string RatingTip => _display.RatingTip;
+    public string SourcesText => _display.SourcesText;
+    public bool IsWatched => _display.IsWatched;
+    public bool InWatchlist => _display.InWatchlist;
     public string WatchlistTip => InWatchlist ? "Remove from Watchlist" : "Add to Watchlist";
-    public bool HasNewEpisodes { get; } = newEpisodes.Count > 0 && title.Versions.Any(v => newEpisodes.Contains(FollowedEpisodes.EpisodeId(v)));
-    public bool HasResume => title.ResumeVersion is { Duration: > 0 };
-    public double ResumePercent => title.ResumeVersion is { Duration: > 0 } r ? Math.Min(100, 100 * r.ProgressSeconds / r.Duration) : 0;
-    public string ResumeText => title.ResumeVersion is { } r ? $"Resume at {(int)(r.ProgressSeconds / 60)} min" : "";
-    public string PlayLabel => title.ResumeVersion is null ? "Play" : "Resume";
+    public bool HasNewEpisodes => _display.HasNewEpisodes;
+    public bool HasResume => _display.HasResume;
+    public double ResumePercent => _display.ResumePercent;
+    public string ResumeText => _display.ResumeText;
+    public string PlayLabel => _display.PlayLabel;
+
+    /// True when both cards show the same title with the same values.
+    public bool ShowsSameAs(HomeCardViewModel other) => _display == other._display;
 }
 
 /// Personal Collections window and the followed-series notification opt-in.
