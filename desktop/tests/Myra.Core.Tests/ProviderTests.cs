@@ -83,7 +83,7 @@ public sealed class ProviderTests : IDisposable
         using var index = NewIndex();
         var handler = FakeHttpHandler.ByPath(new()
         {
-            ["/3/tv/77"] = (200, """{"id":77,"name":"Show","vote_average":7.5,"vote_count":300,"first_air_date":"2020-01-01"}"""),
+            ["/3/tv/77"] = (200, """{"id":77,"name":"Show","vote_average":7.5,"vote_count":300,"first_air_date":"2020-01-01","episode_run_time":[]}"""),
             ["/3/tv/77/season/1"] = (200, """{"episodes":[{"episode_number":1,"season_number":1,"air_date":"2020-01-01"},{"episode_number":2,"season_number":1,"air_date":"2020-01-08"},{"episode_number":3,"season_number":1,"air_date":"2020-01-15"}]}"""),
         });
         var service = new DiscoveryService(handler.Client(), TimeSpan.Zero);
@@ -93,7 +93,19 @@ public sealed class ProviderTests : IDisposable
         Assert.Equal(new Dictionary<string, string> { ["1|1"] = "2020-01-01", ["1|2"] = "2020-01-08" }, metadata.EpisodeReleaseDates);
         Assert.DoesNotContain(handler.Requests, r => r.Url.AbsolutePath.Contains("search"));
         Assert.Equal("2020-01-08", (title with { Metadata = metadata }).LatestReleaseDate);
+        // An empty episode_run_time list means an unknown runtime, not 0 minutes.
+        Assert.Null(metadata.RuntimeMinutes);
     }
+
+    [Theory]
+    [InlineData(null, null, null)]
+    [InlineData(null, new int[0], null)]
+    [InlineData(0, new[] { 0 }, null)]
+    [InlineData(0, new[] { 0, 45 }, 45)]
+    [InlineData(null, new[] { 42, 50 }, 42)]
+    [InlineData(118, new[] { 42 }, 118)]
+    public void RuntimeIsNullWithoutAPositiveValue(int? runtime, int[]? episodes, int? expected) =>
+        Assert.Equal(expected, DiscoveryService.RuntimeMinutes(runtime, episodes));
 
     [Fact]
     public async Task StoreEnrichmentProcessesBoundedBatchAndRemembersAmbiguousTitles()

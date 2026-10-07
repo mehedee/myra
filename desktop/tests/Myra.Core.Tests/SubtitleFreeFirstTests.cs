@@ -106,6 +106,32 @@ public sealed class SubtitleFreeFirstTests : IDisposable
         Assert.Equal([22], manifest![identity.CacheKey]);
     }
 
+    /// Review finding: the title manifest was reset silently once it passed 2 MB.
+    [Fact]
+    public void TitleManifestDropsExpiredFilesAndKeepsTheNewestTitles()
+    {
+        var cache = new SubtitleCache(Path.Combine(_temp.Path, "cache"));
+        var expired = cache.Store(Encoding.UTF8.GetBytes(Srt), 2);
+        cache.Remember(2, new MediaIdentity("Old Title"));
+        System.IO.File.SetLastWriteTimeUtc(expired, DateTime.UtcNow.AddDays(-40));
+        cache.Store(Encoding.UTF8.GetBytes(Srt), 1);
+        var first = new MediaIdentity("Title 0");
+        for (var i = 0; i < SubtitleCache.MaximumTitles + 5; i++)
+        {
+            cache.Remember(1, new MediaIdentity($"Title {i}"));
+            if (i == 10) cache.Remember(1, first); // Remembered again: it moves to the newest end.
+        }
+
+        var manifestPath = Path.Combine(cache.DirectoryPath, "title-cache.json");
+        var manifest = JsonSerializer.Deserialize<Dictionary<string, int[]>>(File.ReadAllText(manifestPath))!;
+        Assert.Equal(SubtitleCache.MaximumTitles, manifest.Count);
+        Assert.False(manifest.ContainsKey(new MediaIdentity("Old Title").CacheKey));
+        Assert.Single(cache.Cached(first));
+        Assert.Empty(cache.Cached(new MediaIdentity("Title 1")));
+        Assert.Single(cache.Cached(new MediaIdentity($"Title {SubtitleCache.MaximumTitles + 4}")));
+        Assert.True(new FileInfo(manifestPath).Length < 512 * 1024);
+    }
+
     [Fact]
     public void ManifestIsNotPrunedAsAnOwnedSubtitle()
     {

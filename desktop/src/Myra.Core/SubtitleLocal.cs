@@ -63,9 +63,13 @@ public sealed partial class SubtitleCache
 {
     private const string ManifestName = "title-cache.json";
     private const int MaximumTitleFiles = 20;
+    /// Titles remembered at most. The least recently remembered title is dropped first.
+    internal const int MaximumTitles = 1000;
     private const long MaximumManifestBytes = 2 * 1024 * 1024;
 
     /// Remembers that this cached provider file belongs to this title, so it can be offered again offline.
+    /// Each save drops expired or deleted files and empty titles, and keeps at most MaximumTitles titles,
+    /// so the manifest stays far below its 2 MB read limit and is never silently reset.
     public void Remember(int fileId, MediaIdentity identity)
     {
         lock (_lock)
@@ -74,10 +78,19 @@ public sealed partial class SubtitleCache
             var manifest = Path.Combine(_directory, ManifestName);
             if (new FileInfo(manifest).LinkTarget is not null) throw new SubtitleException(SubtitleErrorKind.UnsafeUrl);
             var titles = ReadTitles();
-            var files = titles.TryGetValue(identity.CacheKey, out var existing) ? existing.ToList() : [];
-            if (!files.Contains(fileId)) files.Add(fileId);
-            titles[identity.CacheKey] = files.TakeLast(MaximumTitleFiles).ToArray();
-            AtomicFile.WriteAllText(manifest, JsonSerializer.Serialize(titles));
+            var files = titles.Remove(identity.CacheKey, out var existing) ? existing.ToList() : [];
+            files.Remove(fileId);
+            files.Add(fileId);
+            // One file check per distinct ID: titles often share files.
+            var alive = new Dictionary<int, bool>();
+            bool Live(int id) => alive.TryGetValue(id, out var known) ? known : alive[id] = Cached(id) is not null;
+            var pruned = new OrderedDictionary<string, int[]>();
+            foreach (var (key, ids) in titles)
+                if (ids.Where(Live).ToArray() is { Length: > 0 } live) pruned[key] = live;
+            // Most recent last: the new entry goes to the end, the oldest entries are dropped.
+            pruned[identity.CacheKey] = files.Where(Live).TakeLast(MaximumTitleFiles).ToArray();
+            while (pruned.Count > MaximumTitles) pruned.RemoveAt(0);
+            AtomicFile.WriteAllText(manifest, JsonSerializer.Serialize(pruned));
         }
     }
 
@@ -92,17 +105,20 @@ public sealed partial class SubtitleCache
         }
     }
 
-    private Dictionary<string, int[]> ReadTitles()
+    /// The manifest in file order (oldest first). Empty when it is missing, damaged or oversized.
+    private OrderedDictionary<string, int[]> ReadTitles()
     {
         var info = new FileInfo(Path.Combine(_directory, ManifestName));
         try
         {
             if (!info.Exists || info.LinkTarget is not null || info.Length > MaximumManifestBytes) return [];
-            return JsonSerializer.Deserialize<Dictionary<string, int[]>>(File.ReadAllText(info.FullName)) is { } titles
-                ? titles.Where(t => t.Value is not null).ToDictionary(t => t.Key, t => t.Value)
-                : [];
+            var titles = new OrderedDictionary<string, int[]>();
+            if (JsonSerializer.Deserialize<OrderedDictionary<string, int[]>>(File.ReadAllText(info.FullName)) is { } read)
+                foreach (var (key, ids) in read)
+                    if (ids is not null) titles[key] = ids;
+            return titles;
         }
-        catch (Exception ex) when (ex is JsonException or IOException or UnauthorizedAccessException)
+        catch (Exception ex) when (ex is JsonException or IOException or UnauthorizedAccessException or NotSupportedException)
         {
             return [];
         }

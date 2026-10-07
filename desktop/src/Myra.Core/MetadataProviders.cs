@@ -201,13 +201,23 @@ public sealed class DiscoveryService
             ReleaseDate = item.ReleaseDate ?? item.FirstAirDate,
             Genres = item.Genres?.Select(g => g.Name).ToList() ?? [],
             Language = item.OriginalLanguage ?? "",
-            RuntimeMinutes = item.Runtime ?? item.EpisodeRunTime?.FirstOrDefault(),
+            RuntimeMinutes = RuntimeMinutes(item.Runtime, item.EpisodeRunTime),
             EpisodeReleaseDates = dates,
         };
         var json = JsonSerializer.Serialize(result, SwiftJson.Options);
         index.SaveMetadata(cacheKey, json);
         index.SaveMetadata($"tmdb-base|{title.Id}|{correction?.ProviderId ?? 0}", json);
         return result;
+    }
+
+    /// The movie runtime, else the first positive episode runtime. Null when TMDb has no positive
+    /// value (an empty episode_run_time list is common for series): unknown, never 0 minutes.
+    internal static int? RuntimeMinutes(int? runtime, IReadOnlyList<int>? episodeRunTimes)
+    {
+        if (runtime is > 0) return runtime;
+        foreach (var minutes in episodeRunTimes ?? [])
+            if (minutes > 0) return minutes;
+        return null;
     }
 }
 
