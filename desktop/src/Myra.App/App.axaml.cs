@@ -26,6 +26,8 @@ public partial class App : Application
         {
             var services = new AppServices();
             ApplyTheme(services.Store.Settings.Theme);
+            MyraAppearance.Apply(services.Store.Settings);
+            SettingsHooks.CreateAiSettings = s => new AiSettingsView(s);
             var main = new MainViewModel(services, CreateDialogs(services));
             desktop.MainWindow = new MainWindow { DataContext = main };
             desktop.ShutdownRequested += (_, _) => services.Shutdown();
