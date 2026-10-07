@@ -346,7 +346,7 @@ public sealed class FuzzySearchTests : IDisposable
 
     /// Review finding: Search built queued documents without a cancellation token while holding the lock.
     [Fact]
-    public void SearchDocumentBuildIsCancellableAndSafeAlongsideOtherCalls()
+    public async Task SearchDocumentBuildIsCancellableAndSafeAlongsideOtherCalls()
     {
         var path = DatabasePath();
         CreateV3(path, 1200);
@@ -371,7 +371,7 @@ public sealed class FuzzySearchTests : IDisposable
         var url = new Uri("https://example.com/movies/m1.mkv");
         index.SavePlaybackPosition(url, 12, 100);
         Assert.Equal(12, index.PlaybackPosition(url));
-        build.Wait(TimeSpan.FromSeconds(30));
+        await build.WaitAsync(TimeSpan.FromSeconds(30));
         Assert.Equal(500, index.Search("intersteller").Count);
         Assert.Equal(1200L, Scalar(path, "SELECT COUNT(*) FROM search_documents"));
     }
