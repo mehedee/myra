@@ -18,6 +18,8 @@
       <TextBlock Text="No unwatched titles match" FontSize="20" FontWeight="SemiBold" HorizontalAlignment="Center" />
       <TextBlock Text="Try broadening your Home filters or refreshing your library." Opacity="0.7"
                  TextWrapping="Wrap" TextAlignment="Center" />
+      <Button Content="Reset Home Filters" HorizontalAlignment="Center" Command="{Binding ResetFiltersCommand}"
+              IsVisible="{Binding CanResetFilters}" x:Name="ResetFiltersButton" />
       <Button Content="Close" HorizontalAlignment="Center" Command="{Binding CloseCommand}" />
     </StackPanel>
   </Panel>

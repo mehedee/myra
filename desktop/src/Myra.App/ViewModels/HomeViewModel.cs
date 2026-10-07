@@ -71,7 +71,12 @@ public sealed partial class HomeViewModel : ObservableObject
     [ObservableProperty] private bool _isPreparing;
     [ObservableProperty] private int _titleCount;
     [ObservableProperty] [NotifyPropertyChangedFor(nameof(IsCatalogueEmpty), nameof(HasCatalogue))] private bool _hasTitles;
-    [ObservableProperty] private bool _canPick;
+    /// The filters the current projection was built for. Pick only uses a projection that matches the filters on screen.
+    private HomeCatalogueFilter? _preparedFilter;
+
+    /// Enabled once the projection for the current filters is ready, even when every title is watched:
+    /// the Pick window then offers Reset Home Filters.
+    public bool CanPick => IsReady && HasTitles && _preparedFilter == Filter;
 
     /// True once the first projection has run (Home shows its empty state only after that).
     [ObservableProperty] [NotifyPropertyChangedFor(nameof(IsCatalogueEmpty))] private bool _isReady;
@@ -119,6 +124,7 @@ public sealed partial class HomeViewModel : ObservableObject
     partial void OnQueryChanged(string value)
     {
         OnPropertyChanged(nameof(HasQuery));
+        OnPropertyChanged(nameof(CanPick));
         Schedule();
     }
 
@@ -132,9 +138,17 @@ public sealed partial class HomeViewModel : ObservableObject
     private void OnFilterChanged(object? value, string index)
     {
         OnPropertyChanged(index);
-        if (!_applying && value is not null) Schedule();
+        if (!_applying && value is not null)
+        {
+            OnPropertyChanged(nameof(CanPick));
+            Schedule();
+        }
     }
-    partial void OnHideWatchedChanged(bool value) => Schedule();
+    partial void OnHideWatchedChanged(bool value)
+    {
+        OnPropertyChanged(nameof(CanPick));
+        Schedule();
+    }
     partial void OnTitleCountChanged(int value) => OnPropertyChanged(nameof(TitleCountText));
 
     private static readonly TimeSpan StoreChangeDelay = TimeSpan.FromMilliseconds(500);
@@ -206,7 +220,7 @@ public sealed partial class HomeViewModel : ObservableObject
         // A combo box bound before its items exist shows nothing until its items reset once.
         var first = !IsReady;
         IsReady = true;
-        CanPick = EntertainmentPick.CanPick(projection.Filtered, personal.Watched);
+        _preparedFilter = filter;
         var (genre, language, year, source) = (filter.Genre, filter.Language, filter.Year, filter.Source);
         _applying = true;
         Genres = Choices(Genres, projection.Genres, "genres", genre, first);
@@ -216,6 +230,7 @@ public sealed partial class HomeViewModel : ObservableObject
         // Re-assert the selections so every combo box shows its choice after its items changed.
         SetSelections(genre, language, year, source);
         _applying = false;
+        OnPropertyChanged(nameof(CanPick));
         if (revision == _appliedRevision && filter == _appliedFilter) return;
         _appliedRevision = revision;
         _appliedFilter = filter;
@@ -278,8 +293,8 @@ public sealed partial class HomeViewModel : ObservableObject
     [RelayCommand]
     private async Task PickSomethingAsync()
     {
-        if (_main.Windows is not { } windows) return;
-        using var pick = new PickViewModel(_main, _prepared.Filtered, Filter.Description);
+        if (_main.Windows is not { } windows || _preparedFilter is not { } prepared || prepared != Filter) return;
+        using var pick = new PickViewModel(_main, _prepared.Filtered, prepared.Description, Reset);
         _main.LastPick = pick;
         var chosen = await windows.ShowPickAsync(pick);
         if (chosen is not null) await _main.StartTitleAsync(chosen);

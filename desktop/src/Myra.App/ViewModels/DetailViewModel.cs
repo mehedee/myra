@@ -127,10 +127,13 @@ public sealed partial class PickViewModel : ObservableObject, IDisposable
     private readonly MainViewModel _main;
     private readonly IReadOnlyList<EntertainmentTitle> _candidates;
 
-    public PickViewModel(MainViewModel main, IReadOnlyList<EntertainmentTitle> candidates, string filters)
+    private readonly Action? _resetFilters;
+
+    public PickViewModel(MainViewModel main, IReadOnlyList<EntertainmentTitle> candidates, string filters, Action? resetFilters = null)
     {
         _main = main;
         _candidates = candidates;
+        _resetFilters = resetFilters;
         Filters = filters;
         AnotherPick();
     }
@@ -142,6 +145,9 @@ public sealed partial class PickViewModel : ObservableObject, IDisposable
     [ObservableProperty] [NotifyPropertyChangedFor(nameof(IsEmpty), nameof(HasPick))] private DetailViewModel? _details;
     public bool IsEmpty => Details is null;
     public bool HasPick => Details is not null;
+
+    /// The empty state offers Reset Home Filters when the caller can reset them.
+    public bool CanResetFilters => _resetFilters is not null;
 
     /// IDs shown so far, newest last (for checks).
     public List<string> History { get; } = [];
@@ -171,6 +177,13 @@ public sealed partial class PickViewModel : ObservableObject, IDisposable
     }
 
     [RelayCommand] private void Close() => CloseRequested?.Invoke();
+
+    [RelayCommand]
+    private void ResetFilters()
+    {
+        CloseRequested?.Invoke();
+        _resetFilters?.Invoke();
+    }
 
     private void OnPlay(EntertainmentTitle title) => PlayRequested?.Invoke(title);
     private void OnClose() => CloseRequested?.Invoke();

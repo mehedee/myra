@@ -132,14 +132,29 @@ internal static class ShellChecks
         }
         var watched = vm.Home.Filtered.Select(t => t.Id).ToList();
         foreach (var id in watched) services.Entertainment.ToggleWatched(id);
-        using (var empty = new PickViewModel(vm, vm.Home.Filtered, vm.Home.Filter.Description))
+        vm.Home.Query = "arriv";
+        await pump(() => !vm.Home.IsPreparing && vm.Home.Filtered.Count == 1, 5000);
+        check(vm.Home.CanPick, "Pick stays available when every matching title is watched (the window explains why)");
+        vm.Home.Query = "zzzz";
+        check(!vm.Home.CanPick, "Pick is disabled while the projection does not match the current filters");
+        await pump(() => !vm.Home.IsPreparing, 5000);
+        vm.Home.Query = "";
+        await pump(() => !vm.Home.IsPreparing && vm.Home.Filtered.Count > 2, 5000);
+        using (var empty = new PickViewModel(vm, vm.Home.Filtered, vm.Home.Filter.Description, () => vm.Home.ResetCommand.Execute(null)))
         {
-            check(empty.IsEmpty, "Pick shows the empty state when every title is watched");
+            check(empty.IsEmpty && empty.CanResetFilters, "Pick shows the empty state with Reset Home Filters when every title is watched");
             var emptyWindow = new PickWindow(empty);
             _ = emptyWindow.ShowDialog<EntertainmentTitle?>(window);
             await pump(() => emptyWindow.IsVisible, 2000);
             Save(emptyWindow, "13-pick-empty.png");
-            emptyWindow.Close(null);
+            var resetButton = emptyWindow.FindControl<Button>("ResetFiltersButton");
+            check(resetButton is { IsVisible: true }, "the empty Pick window shows Reset Home Filters");
+            vm.Home.Query = "arriv";
+            await pump(() => !vm.Home.IsPreparing && vm.Home.Filtered.Count == 1, 5000);
+            empty.ResetFiltersCommand.Execute(null);
+            await pump(() => !emptyWindow.IsVisible, 2000);
+            await pump(() => !vm.Home.IsPreparing && vm.Home.Query.Length == 0, 5000);
+            check(!emptyWindow.IsVisible && vm.Home.Query.Length == 0, "Reset Home Filters closes the window and clears the filters");
         }
         foreach (var id in watched) services.Entertainment.ToggleWatched(id);
         await pump(() => !vm.Home.IsPreparing, 3000);
@@ -226,6 +241,27 @@ internal static class ShellChecks
         check(vm.Inspector.Selected?.Id == before?.Id && vm.Entries.Count == 2, "clearing Global search restores the browser and the inspector");
         vm.SearchText = "ar";
         check(vm.GlobalStatus.Contains("3 characters"), "Global search needs three characters");
+        vm.SearchText = "";
+
+        // Fuzzy Global search tolerates typos; the toggle switches to exact matching and back.
+        var fuzzyToggle = window.FindControl<Avalonia.Controls.Primitives.ToggleButton>("FuzzyToggle");
+        check(fuzzyToggle is { IsVisible: true, IsChecked: true } && vm.FuzzyGlobalSearch, "Fuzzy toggle sits beside Current/Global and is on by default");
+        vm.SearchText = "arrivel";
+        await pump(() => vm.GlobalResults.Count == 2, 5000);
+        check(vm.GlobalResults.Count == 2 && vm.GlobalResults.All(r => r.Result.Entry.Name.Contains("Arrival")), $"fuzzy search finds Arrival for a typo ({vm.GlobalResults.Count}): " + vm.GlobalStatus);
+        Save(window, "19-fuzzy-search.png");
+        fuzzyToggle!.IsChecked = false;
+        await pump(() => !vm.FuzzyGlobalSearch && !vm.IsGlobalSearching && vm.GlobalResults.Count == 0, 5000);
+        check(!vm.FuzzyGlobalSearch && vm.GlobalResults.Count == 0 && vm.GlobalStatus.Contains("No indexed title matched"), "exact mode rejects the typo: " + vm.GlobalStatus);
+        vm.SearchText = "arrival";
+        await pump(() => vm.GlobalResults.Count == 2, 5000);
+        check(vm.GlobalResults.Count == 2, "exact mode still finds the correct spelling");
+        check(services.Store.Settings.FuzzyGlobalSearch == false, "the search mode is saved with the settings");
+        Save(window, "20-exact-search.png");
+        fuzzyToggle.IsChecked = true;
+        vm.IsGlobalScope = false;
+        check(!fuzzyToggle.IsVisible, "the Fuzzy toggle is hidden for Current-folder search");
+        vm.IsGlobalScope = true;
         vm.SearchText = "";
 
         // Play from directory browsing offers the version chooser for alternate releases.
