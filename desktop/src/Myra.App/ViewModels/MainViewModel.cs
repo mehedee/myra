@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.ComponentModel;
 using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -9,41 +10,98 @@ namespace Myra.App.ViewModels;
 
 public sealed record SourceInput(string Name, string Url);
 
+/// Sidebar sections, in macOS order. Settings opens a dialog instead of a section.
+public enum ShellSection
+{
+    Home,
+    Library,
+    OfflineLibrary,
+    Personal,
+}
+
+public sealed record ShellNavItem(ShellSection Section, string Label, string Icon);
+
 public sealed partial class MainViewModel : ObservableObject
 {
     private readonly AppServices _services;
+    private readonly ShellPlayerHooks _hooks;
     private List<DirectoryEntry> _allEntries = [];
     private Uri? _artwork;
     private CancellationTokenSource? _navigation;
     private CancellationTokenSource? _globalSearch;
-    private CancellationTokenSource? _indexing;
     private CancellationTokenSource? _toast;
+    private CancellationTokenSource? _playChoice;
     private int _globalOffset;
+    private bool _wasShowingGlobal;
+    private GlobalSearchResult? _inspectorBeforeSearch;
 
-    public MainViewModel(AppServices services)
+    public MainViewModel(AppServices services, IAppDialogs? dialogs = null)
     {
         _services = services;
+        Dialogs = dialogs ?? new NullAppDialogs();
+        _hooks = new ShellPlayerHooks(this);
+        Home = new HomeViewModel(this);
+        Offline = new OfflineViewModel(this);
+        Inspector = new InspectorViewModel(services) { Play = PlayResultAsync };
+        Queue = new QueueViewModel(this);
+        _selectedNav = NavItems[0];
         Downloads.ErrorRaised += message => ErrorMessage = message;
         Downloads.Notice += ShowToast;
+        Downloads.PropertyChanged += OnDownloadsChanged;
         Store.Batches.CollectionChanged += (_, _) => Downloads.UpdateTotals();
+        Store.Items.CollectionChanged += (_, _) =>
+        {
+            if (Offline.IsActive) _ = Offline.Reload();
+        };
+        services.IndexRefresh.Mode = Store.Settings.IndexingMode;
+        services.IndexRefresh.StateChanged += (_, _) => Dispatcher.UIThread.Post(UpdateIndexState);
+        services.IndexRefresh.IndexChanged += (_, _) => Dispatcher.UIThread.Post(OnIndexChanged);
+        services.Entertainment.NewEpisodesDetected += (_, e) => Dispatcher.UIThread.Post(() => OnNewEpisodes(e));
     }
 
     // Set by the view: dialogs and clipboard need a window.
     public Func<Category?, Task<SourceInput?>>? ShowSourceDialog { get; set; }
     public Func<string, Task<bool>>? Confirm { get; set; }
     public Func<string, Task>? CopyText { get; set; }
-    public Func<Task>? ShowSettingsDialog { get; set; }
+
+    /// Called whenever the embedded player is shown (checks use it to observe the player).
     public Action<PlayerViewModel>? ShowPlayer { get; set; }
+
+    /// Hosts a stand-alone player window for command-line playback.
+    public Action<PlayerViewModel>? ShowPlayerWindow { get; set; }
+
+    public IAppDialogs Dialogs { get; set; }
+    public IShellWindows? Windows { get; set; }
 
     public AppServices Services => _services;
     public AppStore Store => _services.Store;
     public DownloadManager Downloads => _services.Downloads;
+    public EntertainmentStore Entertainment => _services.Entertainment;
+    public HomeViewModel Home { get; }
+    public OfflineViewModel Offline { get; }
+    public InspectorViewModel Inspector { get; }
+    public QueueViewModel Queue { get; }
     public ObservableCollection<Category> Categories => Store.Categories;
     public ObservableCollection<DownloadBatch> Batches => Store.Batches;
     public ObservableCollection<EntryViewModel> Entries { get; } = [];
     public ObservableCollection<Breadcrumb> Breadcrumbs { get; } = [];
     public ObservableCollection<GlobalResultViewModel> GlobalResults { get; } = [];
+    public ObservableCollection<GlobalSearchFailure> IndexFailures { get; } = [];
 
+    public IReadOnlyList<ShellNavItem> NavItems { get; } =
+    [
+        new(ShellSection.Home, "Home", "IconHome"),
+        new(ShellSection.Library, "Library", "IconFolder"),
+        new(ShellSection.OfflineLibrary, "Offline Library", "IconDrive"),
+        new(ShellSection.Personal, "Watchlist & Collections", "IconBookmark"),
+    ];
+
+    /// The Pick Something window state last opened (for checks).
+    public PickViewModel? LastPick { get; set; }
+
+    [ObservableProperty] private ShellNavItem _selectedNav;
+    [ObservableProperty] [NotifyPropertyChangedFor(nameof(IsHome), nameof(IsLibrary), nameof(IsOffline), nameof(IsPersonal), nameof(SectionTitle), nameof(ShowInspector))]
+    private ShellSection _section = ShellSection.Home;
     [ObservableProperty] private Category? _selectedCategory;
     [ObservableProperty] private Uri? _currentUrl;
     [ObservableProperty] private bool _isLoading;
@@ -57,32 +115,110 @@ public sealed partial class MainViewModel : ObservableObject
     [ObservableProperty] [NotifyPropertyChangedFor(nameof(HasSelection))] private int _selectedCount;
     [ObservableProperty] private string _globalStatus = "";
     [ObservableProperty] private bool _canLoadMoreGlobal;
+    [ObservableProperty] private bool _isGlobalSearching;
     [ObservableProperty] private bool _isIndexing;
+    [ObservableProperty] private bool _isIndexPaused;
     [ObservableProperty] private string _indexStatus = "";
+    [ObservableProperty] [NotifyPropertyChangedFor(nameof(HasIndexCompletion), nameof(ShowIndexCompletion))] private string? _indexCompletionMessage;
     [ObservableProperty] private bool _showDownloadDetails;
+    [ObservableProperty] [NotifyPropertyChangedFor(nameof(ShowThumbnails), nameof(ShowList))] private bool _hasVideos;
+    [ObservableProperty] [NotifyPropertyChangedFor(nameof(ShowChrome), nameof(ShowDownloadFooter), nameof(ShowInspector), nameof(ShowBrowserArea), nameof(ShowIndexCompletion))]
+    private bool _isPlayerVisible;
+    [ObservableProperty] private PlayerViewModel? _player;
+
+    public bool IsHome => Section == ShellSection.Home;
+    public bool IsLibrary => Section == ShellSection.Library;
+    public bool IsOffline => Section == ShellSection.OfflineLibrary;
+    public bool IsPersonal => Section == ShellSection.Personal;
+    public string SectionTitle => Section switch
+    {
+        ShellSection.Library => "Library",
+        ShellSection.OfflineLibrary => "Offline Library",
+        ShellSection.Personal => "Watchlist & Collections",
+        _ => "Home",
+    };
 
     public bool ShowingGlobalResults => IsGlobalScope && SearchText.Trim().Length > 0;
     public bool ShowingBrowser => !ShowingGlobalResults;
     public bool HasSources => Categories.Count > 0;
+    public bool HasNoSources => Categories.Count == 0;
     public bool HasSelection => SelectedCount > 0;
-    public string SearchWatermark => IsGlobalScope ? "Search all sources (3+ characters)" : "Filter this folder";
-    public string SortNameLabel => SortField == DirectorySortField.Name ? (SortAscending ? "Name ▲" : "Name ▼") : "Name";
-    public string SortDateLabel => SortField == DirectorySortField.Date ? (SortAscending ? "Date ▲" : "Date ▼") : "Date";
-    public string ThemeLabel => $"Theme: {Store.Settings.Theme} (click to change)";
+    public bool ShowThumbnails => HasVideos;
+    public bool ShowList => !HasVideos;
+    public bool HasIndexFailures => IndexFailures.Count > 0;
+    public string IndexFailureLabel => $"{IndexFailures.Count} unavailable";
+    public bool HasIndexCompletion => IndexCompletionMessage is not null;
+    public bool ShowIndexCompletion => HasIndexCompletion && ShowChrome;
+    public bool IsPlayerFullscreen => IsPlayerVisible && Player?.IsFullscreen == true;
+
+    /// Toolbar, sidebar, index status and download footer are hidden during fullscreen playback.
+    public bool ShowChrome => !IsPlayerFullscreen;
+    public bool ShowBrowserArea => !IsPlayerVisible;
+    public bool ShowDownloadFooter => (Downloads.HasRecords || Downloads.IsScanning) && ShowChrome;
+    public bool ShowInspector => IsLibrary && !IsPlayerVisible && Inspector.IsOpen;
+    public string SearchWatermark => IsGlobalScope ? "Search all video files (3+ characters)" : "Search files and folders";
+    public string SortNameLabel => SortField == DirectorySortField.Name ? (SortAscending ? "File / Folder Name ▲" : "File / Folder Name ▼") : "File / Folder Name";
+    public string SortDateLabel => SortField == DirectorySortField.Date ? (SortAscending ? "Date Modified ▲" : "Date Modified ▼") : "Date Modified";
+    public string ThemeLabel => $"Theme: {ThemeName(Store.Settings.Theme)}. Click for {ThemeName(Store.Settings.Theme.Next())}.";
+    public string ThemeIcon => Store.Settings.Theme switch
+    {
+        AppThemeMode.Light => "IconSun",
+        AppThemeMode.Dark => "IconMoon",
+        _ => "IconTheme",
+    };
+    public string BrowserCountText => ShowingGlobalResults
+        ? $"{GlobalResults.Count} matching videos" + (SelectedCount > 0 ? $" • {SelectedCount} selected" : "")
+        : $"{Entries.Count} of {_allEntries.Count} items" + (SelectedCount > 0 ? $" • {SelectedCount} selected" : "");
+
+    private static string ThemeName(AppThemeMode mode) => mode == AppThemeMode.System ? "System" : mode.ToString();
 
     public async Task StartAsync()
     {
         OnPropertyChanged(nameof(HasSources));
+        OnPropertyChanged(nameof(HasNoSources));
+        Inspector.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(InspectorViewModel.IsOpen)) OnPropertyChanged(nameof(ShowInspector));
+        };
         await Downloads.RecoverAsync();
-        if (Categories.FirstOrDefault() is { } first) SelectedCategory = first;
-        RefreshIndex(manual: false, onlyIfDue: true);
+        if (Categories.FirstOrDefault() is { } first)
+        {
+            _selectingQuietly = true;
+            SelectedCategory = first;
+            _selectingQuietly = false;
+            _ = NavigateAsync(first.RootUrl!);
+        }
+        // Home first from the saved snapshot, then only due folders.
+        RefreshIndex(manual: false, prepare: () => Entertainment.ReloadAsync());
     }
+
+    // ---------- Navigation ----------
+
+    private bool _selectingQuietly;
+
+    partial void OnSelectedNavChanged(ShellNavItem value)
+    {
+        if (value is not null) Section = value.Section;
+    }
+
+    partial void OnSectionChanged(ShellSection value)
+    {
+        if (SelectedNav?.Section != value) SelectedNav = NavItems.First(n => n.Section == value);
+        Offline.IsActive = value == ShellSection.OfflineLibrary;
+        if (Offline.IsActive) _ = Offline.Reload();
+    }
+
+    [RelayCommand] private void ShowSection(ShellSection section) => Section = section;
 
     // ---------- Sources ----------
 
     partial void OnSelectedCategoryChanged(Category? value)
     {
-        if (value?.RootUrl is { } root) _ = NavigateAsync(root);
+        if (_selectingQuietly || value?.RootUrl is not { } root) return;
+        // Choosing a source in the sidebar browses it (macOS switches Global search back to Current).
+        Section = ShellSection.Library;
+        if (IsGlobalScope && SearchText.Length > 0) IsGlobalScope = false;
+        _ = NavigateAsync(root);
     }
 
     [RelayCommand]
@@ -95,9 +231,9 @@ public sealed partial class MainViewModel : ObservableObject
         if (category is null) return;
         Categories.Add(category);
         SaveStore();
-        OnPropertyChanged(nameof(HasSources));
+        NotifySources();
         SelectedCategory = category;
-        RefreshIndex(manual: false);
+        if (category.SearchRoot is { } root) RefreshIndex(manual: false, IndexRefreshMode.Selected, [IndexScope.ForRoot(root)]);
     }
 
     [RelayCommand]
@@ -113,7 +249,7 @@ public sealed partial class MainViewModel : ObservableObject
         category.RootUrlString = validated.RootUrlString;
         SaveStore();
         if (SelectedCategory == category && category.RootUrl is { } root) await NavigateAsync(root);
-        RefreshIndex(manual: false);
+        if (category.SearchRoot is { } searchRoot) RefreshIndex(manual: false, IndexRefreshMode.Selected, [IndexScope.ForRoot(searchRoot)]);
     }
 
     [RelayCommand]
@@ -121,10 +257,10 @@ public sealed partial class MainViewModel : ObservableObject
     {
         category ??= SelectedCategory;
         if (category is null) return;
-        if (Confirm is not null && !await Confirm($"Remove the source \"{category.Name}\"? Downloaded files are not deleted.")) return;
+        if (Confirm is not null && !await Confirm($"Remove the source \"{category.Name}\"? Downloads already added to the queue and downloaded files are not removed.")) return;
         Categories.Remove(category);
         SaveStore();
-        OnPropertyChanged(nameof(HasSources));
+        NotifySources();
         if (SelectedCategory == category)
         {
             SelectedCategory = Categories.FirstOrDefault();
@@ -132,11 +268,19 @@ public sealed partial class MainViewModel : ObservableObject
             {
                 Entries.Clear();
                 Breadcrumbs.Clear();
+                _allEntries = [];
                 CurrentUrl = null;
+                HasVideos = false;
             }
         }
-        var roots = SearchRoots();
-        await Task.Run(() => _services.Index.SynchronizeSources(roots));
+        // Cancels the running scan and removes only the deleted source's records.
+        RefreshIndex(manual: false, IndexRefreshMode.Selected, []);
+    }
+
+    private void NotifySources()
+    {
+        OnPropertyChanged(nameof(HasSources));
+        OnPropertyChanged(nameof(HasNoSources));
     }
 
     private async Task<Category?> ValidateSourceAsync(SourceInput input)
@@ -250,27 +394,42 @@ public sealed partial class MainViewModel : ObservableObject
     [RelayCommand]
     private async Task ReloadAsync()
     {
-        if (CurrentUrl is not null) await NavigateAsync(CurrentUrl);
+        if (ShowingGlobalResults) StartGlobalSearch();
+        else if (CurrentUrl is not null) await NavigateAsync(CurrentUrl);
     }
 
+    /// Folder: open it. Video: show its information (macOS: clicking a thumbnail or title).
     [RelayCommand]
     private async Task OpenEntryAsync(EntryViewModel? item)
     {
         if (item is null) return;
         if (item.IsFolder) await NavigateAsync(item.Entry.Url);
-        else if (item.IsVideo) Play(item.Entry);
+        else if (item.IsVideo) Inspect(item.Entry);
+    }
+
+    [RelayCommand]
+    private void InspectResult(GlobalResultViewModel? item)
+    {
+        if (item is not null) Inspector.Select(item.Result);
+    }
+
+    public void Inspect(DirectoryEntry entry)
+    {
+        if (entry.IsVideo && ResultFor(entry) is { } result) Inspector.Select(result);
     }
 
     partial void OnSearchTextChanged(string value)
     {
         OnPropertyChanged(nameof(ShowingGlobalResults));
         OnPropertyChanged(nameof(ShowingBrowser));
+        TrackGlobalTransition();
         if (IsGlobalScope) StartGlobalSearch();
         else ApplyFilter();
     }
 
     partial void OnIsGlobalScopeChanged(bool value)
     {
+        TrackGlobalTransition();
         if (value)
         {
             ApplyFilter();
@@ -279,9 +438,31 @@ public sealed partial class MainViewModel : ObservableObject
         else
         {
             _globalSearch?.Cancel();
+            IsGlobalSearching = false;
             ApplyFilter();
         }
     }
+
+    /// Clearing Global search restores the previous browser, filter and inspector state.
+    private void TrackGlobalTransition()
+    {
+        var showing = ShowingGlobalResults;
+        if (showing == _wasShowingGlobal) return;
+        _wasShowingGlobal = showing;
+        if (showing)
+        {
+            _inspectorBeforeSearch = Inspector.Selected;
+        }
+        else
+        {
+            if (_inspectorBeforeSearch is { } previous) Inspector.Select(previous);
+            else Inspector.Close();
+            _inspectorBeforeSearch = null;
+        }
+        OnPropertyChanged(nameof(BrowserCountText));
+    }
+
+    [RelayCommand] private void ClearSearch() => SearchText = "";
 
     [RelayCommand]
     private void SortBy(string field)
@@ -291,7 +472,7 @@ public sealed partial class MainViewModel : ObservableObject
         else
         {
             SortField = requested;
-            SortAscending = requested == DirectorySortField.Name;
+            SortAscending = true;
         }
         OnPropertyChanged(nameof(SortNameLabel));
         OnPropertyChanged(nameof(SortDateLabel));
@@ -306,18 +487,22 @@ public sealed partial class MainViewModel : ObservableObject
         Entries.Clear();
         foreach (var entry in DirectoryEntrySorter.Sorted(visible, SortField, SortAscending))
         {
-            var item = new EntryViewModel(entry) { IsSelected = selected.Contains(entry.Key) };
+            var item = new EntryViewModel(entry, entry.IsFolder ? null : _artwork) { IsSelected = selected.Contains(entry.Key) };
             item.PropertyChanged += (_, args) =>
             {
                 if (args.PropertyName == nameof(EntryViewModel.IsSelected)) UpdateSelectedCount();
             };
             Entries.Add(item);
         }
+        HasVideos = Entries.Any(e => e.IsVideo);
         UpdateSelectedCount();
     }
 
-    private void UpdateSelectedCount() =>
+    private void UpdateSelectedCount()
+    {
         SelectedCount = ShowingGlobalResults ? GlobalResults.Count(r => r.IsSelected) : Entries.Count(e => e.IsSelected);
+        OnPropertyChanged(nameof(BrowserCountText));
+    }
 
     [RelayCommand]
     private void SelectAll()
@@ -337,11 +522,13 @@ public sealed partial class MainViewModel : ObservableObject
 
     // ---------- Global search ----------
 
-    private void StartGlobalSearch()
+    private void StartGlobalSearch(bool keepSelection = false)
     {
         _globalSearch?.Cancel();
+        var selected = keepSelection ? GlobalResults.Where(r => r.IsSelected).Select(r => r.Result.Id).ToHashSet() : [];
         GlobalResults.Clear();
         CanLoadMoreGlobal = false;
+        IsGlobalSearching = false;
         _globalOffset = 0;
         UpdateSelectedCount();
         var query = SearchText.Trim();
@@ -355,21 +542,27 @@ public sealed partial class MainViewModel : ObservableObject
             GlobalStatus = "Enter at least 3 characters for Global search.";
             return;
         }
+        if (Categories.Count == 0)
+        {
+            GlobalStatus = "Add a source to search.";
+            return;
+        }
         var search = _globalSearch = new CancellationTokenSource();
-        _ = RunGlobalSearchAsync(query, search.Token, debounce: true);
+        _ = RunGlobalSearchAsync(query, search.Token, debounce: !keepSelection, selected);
     }
 
-    private async Task RunGlobalSearchAsync(string query, CancellationToken token, bool debounce)
+    private async Task RunGlobalSearchAsync(string query, CancellationToken token, bool debounce, IReadOnlySet<GlobalSearchResultId>? selected = null)
     {
+        IsGlobalSearching = true;
         try
         {
-            if (debounce) await Task.Delay(250, token);
+            if (debounce) await Task.Delay(150, token);
             var offset = _globalOffset;
             var page = await Task.Run(() => _services.Index.Search(query, 500, offset), token);
             if (token.IsCancellationRequested) return;
             foreach (var result in page)
             {
-                var item = new GlobalResultViewModel(result);
+                var item = new GlobalResultViewModel(result) { IsSelected = selected?.Contains(result.Id) == true };
                 item.PropertyChanged += (_, args) =>
                 {
                     if (args.PropertyName == nameof(GlobalResultViewModel.IsSelected)) UpdateSelectedCount();
@@ -379,8 +572,9 @@ public sealed partial class MainViewModel : ObservableObject
             _globalOffset += page.Count;
             CanLoadMoreGlobal = page.Count == 500;
             GlobalStatus = GlobalResults.Count == 0
-                ? (IsIndexing ? "No matches yet. Indexing is still running…" : "No matching videos in the index.")
+                ? (IsIndexing ? "No matches yet. Indexing is still running…" : $"No video filename matched “{query}”.")
                 : $"{GlobalResults.Count}{(CanLoadMoreGlobal ? "+" : "")} matching videos";
+            UpdateSelectedCount();
         }
         catch (OperationCanceledException)
         {
@@ -389,84 +583,115 @@ public sealed partial class MainViewModel : ObservableObject
         {
             GlobalStatus = error.Message;
         }
+        finally
+        {
+            if (!token.IsCancellationRequested) IsGlobalSearching = false;
+        }
     }
 
     [RelayCommand]
     private Task LoadMoreGlobalAsync()
     {
+        if (!CanLoadMoreGlobal || IsGlobalSearching) return Task.CompletedTask;
         var search = _globalSearch ??= new CancellationTokenSource();
         return RunGlobalSearchAsync(SearchText.Trim(), search.Token, debounce: false);
     }
 
+    [RelayCommand]
+    private void CancelGlobalSearch()
+    {
+        _globalSearch?.Cancel();
+        IsGlobalSearching = false;
+    }
+
     // ---------- Index ----------
 
+    /// The latest refresh (startup, footer button, source change). Checks await it.
+    public Task IndexTask { get; private set; } = Task.CompletedTask;
+
+    /// Footer refresh button: due folders, with a completion message.
     [RelayCommand]
     private void RefreshIndexNow() => RefreshIndex(manual: true);
 
-    public void RefreshIndex(bool manual, bool onlyIfDue = false)
+    [RelayCommand] private Task OpenIndexManagementAsync() => WithOwner(owner => Dialogs.ShowIndexManagementAsync(owner));
+    [RelayCommand] private void CancelIndexing() => _services.IndexRefresh.Cancel();
+
+    [RelayCommand]
+    private void TogglePauseIndexing()
     {
-        _indexing?.Cancel();
-        var indexing = _indexing = new CancellationTokenSource();
-        _ = RunIndexAsync(manual, onlyIfDue, indexing.Token);
+        if (_services.IndexRefresh.IsPaused) _services.IndexRefresh.Resume();
+        else _services.IndexRefresh.Pause();
     }
 
-    private async Task RunIndexAsync(bool manual, bool onlyIfDue, CancellationToken token)
+    [RelayCommand] private void DismissIndexCompletion() => IndexCompletionMessage = null;
+
+    public void RefreshIndex(bool manual, IndexRefreshMode mode = IndexRefreshMode.Due, IReadOnlyList<IndexScope>? scopes = null, Func<Task>? prepare = null)
     {
         var roots = SearchRoots();
+        _services.IndexRefresh.Mode = Store.Settings.IndexingMode;
         IsIndexing = true;
+        var refresh = _services.IndexRefresh.RefreshAsync(roots, mode, manual, scopes, prepare: prepare);
+        IndexTask = FinishRefreshAsync(refresh, manual);
+    }
+
+    private async Task FinishRefreshAsync(Task<IndexRefreshOutcome> refresh, bool manual)
+    {
+        IndexRefreshOutcome outcome;
         try
         {
-            var index = await Task.Run(() => _services.Index, token);
-            await Task.Run(() => index.SynchronizeSources(roots), token);
-            var due = await Task.Run(() => index.NeedsRefresh(roots), token);
-            if (roots.Count == 0 || (onlyIfDue && !due))
-            {
-                IndexStatus = DescribeIndex(index.LastRefresh());
-                return;
-            }
-            IndexStatus = "Indexing…";
-            var mode = Store.Settings.IndexingMode;
-            var last = DateTime.MinValue;
-            var indexer = new LibraryIndexer(new GlobalSearchService(_services.Directory, 2));
-            var snapshot = await indexer.RefreshAsync(roots, index, Guid.NewGuid(),
-                snapshot =>
-                {
-                    if (DateTime.UtcNow - last < TimeSpan.FromMilliseconds(500)) return Task.CompletedTask;
-                    last = DateTime.UtcNow;
-                    var p = snapshot.Progress;
-                    Dispatcher.UIThread.Post(() =>
-                    {
-                        if (!token.IsCancellationRequested)
-                            IndexStatus = $"Indexing… {p.SourcesCompleted}/{p.SourcesTotal} sources · {p.FoldersVisited} folders · {p.MatchesFound} videos";
-                    });
-                    return Task.CompletedTask;
-                },
-                concurrencyLimit: () => mode == IndexingMode.LowImpact || _services.IsPlaying ? 1 : 2,
-                cancellationToken: token);
-            var failures = snapshot.Failures.Count;
-            var summary = $"Indexed {snapshot.Progress.MatchesFound} videos across {snapshot.Progress.FoldersVisited} folders.";
-            if (failures > 0) summary += $" {failures} source(s) could not be fully refreshed; previous records were kept.";
-            IndexStatus = failures > 0 ? summary : DescribeIndex(index.LastRefresh());
-            if (manual) ShowToast(summary);
-            if (ShowingGlobalResults) StartGlobalSearch();
-        }
-        catch (OperationCanceledException)
-        {
+            outcome = await refresh;
         }
         catch (Exception error)
         {
             IndexStatus = "Index refresh failed: " + error.Message;
+            UpdateIndexState(keepStatus: true);
+            return;
         }
-        finally
+        UpdateIndexState();
+        if (outcome.Error is { } failure && !outcome.Cancelled) IndexStatus = "Index refresh failed: " + failure;
+        if (manual && outcome.CompletionMessage is { } message) IndexCompletionMessage = message;
+    }
+
+    private void UpdateIndexState() => UpdateIndexState(keepStatus: false);
+
+    private void UpdateIndexState(bool keepStatus)
+    {
+        var controller = _services.IndexRefresh;
+        IsIndexing = controller.IsRefreshing;
+        IsIndexPaused = controller.IsPaused;
+        var p = controller.Progress;
+        if (!keepStatus)
+            IndexStatus = controller.IsRefreshing
+                ? (controller.IsPaused ? "Indexing paused: " : "Indexing: ") + $"{p.SourcesCompleted}/{p.SourcesTotal} sources • {p.FoldersVisited} folders • {p.MatchesFound} videos"
+                : controller.LastRefresh is { } last ? $"Index updated {last.ToLocalTime():g}" : "Library index has not been refreshed";
+        if (!IndexFailures.SequenceEqual(controller.Failures))
         {
-            if (_indexing?.Token == token) IsIndexing = false;
+            IndexFailures.Clear();
+            foreach (var failure in controller.Failures) IndexFailures.Add(failure);
+            OnPropertyChanged(nameof(HasIndexFailures));
+            OnPropertyChanged(nameof(IndexFailureLabel));
         }
     }
 
-    private static string DescribeIndex(DateTimeOffset? last) =>
-        last is { } value ? $"Index updated {value.ToLocalTime():g}" : "Index not built yet";
+    private void OnIndexChanged()
+    {
+        _ = Entertainment.ReloadAsync();
+        if (ShowingGlobalResults && GlobalResults.Count <= 500) StartGlobalSearch(keepSelection: true);
+    }
+
+    private void OnNewEpisodes(NewEpisodesEventArgs e)
+    {
+        if (!e.Notify) return;
+        if (!ShellNotifications.Show("New episodes available", e.Message)) ShowToast(e.Message);
+    }
 
     // ---------- Downloads ----------
+
+    private void OnDownloadsChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName is nameof(DownloadManager.HasRecords) or nameof(DownloadManager.IsScanning))
+            OnPropertyChanged(nameof(ShowDownloadFooter));
+    }
 
     [RelayCommand]
     private async Task DownloadSelectedAsync()
@@ -546,7 +771,64 @@ public sealed partial class MainViewModel : ObservableObject
     [RelayCommand]
     private void ToggleDownloadDetails() => ShowDownloadDetails = !ShowDownloadDetails;
 
-    // ---------- Playback and actions ----------
+    // ---------- Home titles ----------
+
+    public async Task ShowDetailsAsync(EntertainmentTitle title)
+    {
+        if (Windows is null) return;
+        using var details = new DetailViewModel(this, title);
+        var chosen = await Windows.ShowDetailsAsync(details);
+        if (chosen is not null) await StartTitleAsync(chosen);
+    }
+
+    /// macOS HomeView.start: resume the latest unfinished file, play a single file, or choose an episode/version.
+    /// Callers close Details or Pick before this runs, so the chooser never stacks on them.
+    public async Task StartTitleAsync(EntertainmentTitle title, bool resume = true)
+    {
+        if (resume && title.ResumeVersion is { } latest)
+        {
+            await ResumeVersionAsync(latest);
+            return;
+        }
+        if (title.Versions.Count == 0) return;
+        if (title.Versions.Count == 1)
+        {
+            await StartChosenAsync(title.Versions[0].Media);
+            return;
+        }
+        if (Windows is null) return;
+        var chosen = await Windows.ChooseTitleVersionAsync(new DetailChooserViewModel(title, Entertainment.Personal));
+        if (chosen is null) return;
+        if (chosen.ProgressSeconds >= 5) await ResumeVersionAsync(chosen);
+        else await StartChosenAsync(chosen.Media);
+    }
+
+    public async Task ResumeVersionAsync(EntertainmentVersion version)
+    {
+        var url = version.Media.Entry.Url;
+        if (url.IsFile && !File.Exists(url.LocalPath))
+        {
+            ErrorMessage = "The previously played file is unavailable. Open Details and versions to choose another.";
+            return;
+        }
+        await StartChosenAsync(version.Media, version.ProgressSeconds);
+    }
+
+    [RelayCommand]
+    private Task OpenPersonalLibraryAsync() => OpenPersonalLibraryAsync(null);
+
+    public async Task OpenPersonalLibraryAsync(object? _ = null)
+    {
+        await WithOwner(owner => Dialogs.ShowPersonalLibraryAsync(owner));
+        NotifySources();
+        _ = Entertainment.ReloadAsync();
+        if (SelectedCategory is null && Categories.FirstOrDefault() is { } first) SelectedCategory = first;
+    }
+
+    [RelayCommand]
+    private Task ManageCollectionsAsync() => Home.ManageCollectionsCommand.ExecuteAsync(null);
+
+    // ---------- Playback ----------
 
     private GlobalSearchResult? ResultFor(DirectoryEntry entry)
     {
@@ -557,12 +839,92 @@ public sealed partial class MainViewModel : ObservableObject
         return new GlobalSearchResult(category.Id, category.Name, root, entry, relative, _artwork);
     }
 
-    public void Play(DirectoryEntry entry)
+    /// Directory browsing: shows the inspector for the video, then plays it (with the version chooser when needed).
+    public Task Play(DirectoryEntry entry)
     {
-        if (ResultFor(entry) is not { } result) return;
+        if (ResultFor(entry) is not { } result) return Task.CompletedTask;
+        Inspector.Select(result);
+        return PlayResultAsync(result);
+    }
+
+    [RelayCommand]
+    private Task PlayEntryAsync(EntryViewModel? item) => item?.IsVideo == true ? Play(item.Entry) : Task.CompletedTask;
+
+    [RelayCommand]
+    private Task PlayResultItemAsync(GlobalResultViewModel? item) => item is null ? Task.CompletedTask : PlayResultAsync(item.Result);
+
+    /// macOS AppCoordinator.play: alternate releases from the catalogue, else from the folder listing;
+    /// several releases open the version chooser.
+    public async Task PlayResultAsync(GlobalSearchResult result)
+    {
+        _playChoice?.Cancel();
+        var choice = _playChoice = new CancellationTokenSource();
+        var versions = Entertainment.Variants(result);
+        if (versions.Count < 2 && !result.Entry.Url.IsFile)
+        {
+            try
+            {
+                var listing = await _services.Directory.ListingAsync(result.Entry.Url.Parent(), new UrlBoundary(result.CategoryRoot), choice.Token);
+                versions = PlaybackChoices.FromListing(result, listing.Entries, listing.ArtworkUrl, Entertainment.Personal.MatchCorrections);
+            }
+            catch (Exception)
+            {
+                // An unreachable folder need not block a known file; playback reports reachability errors.
+            }
+        }
+        if (choice.IsCancellationRequested) return;
+        if (PlaybackChoices.For(versions, result) is { } choices)
+        {
+            var media = choices.Versions.Select(v => v.Media).ToList();
+            // Highlighted release first: the most recently played, else the requested file.
+            var preferred = media.FindIndex(m => m.Entry.Url == choices.PreferredUrl);
+            if (preferred > 0) (media[0], media[preferred]) = (media[preferred], media[0]);
+            GlobalSearchResult? chosen = null;
+            if (Windows?.OwnerWindow is { } owner) chosen = await Dialogs.ChooseVersionAsync(owner, media);
+            if (chosen is null || choice.IsCancellationRequested) return;
+            await StartChosenAsync(chosen);
+        }
+        else
+        {
+            await StartChosenAsync(result);
+        }
+    }
+
+    /// Plays one release. Its folder (the open one, or a fresh listing) is the play queue.
+    public async Task StartChosenAsync(GlobalSearchResult result, double? resumeSeconds = null)
+    {
+        if (result.Entry.Url.IsFile)
+        {
+            PlayLocal(result.Entry.Url.LocalPath, resumeSeconds);
+            return;
+        }
+        var parent = result.Entry.Url.Parent();
+        PlaybackSequence sequence;
+        if (SelectedCategory?.Id == result.CategoryId && CurrentUrl is { } current && current.SameAs(parent))
+        {
+            sequence = new PlaybackSequence(result, _allEntries, _artwork);
+        }
+        else
+        {
+            try
+            {
+                var listing = await _services.Directory.ListingAsync(parent, new UrlBoundary(result.CategoryRoot));
+                sequence = new PlaybackSequence(result, listing.Entries, listing.ArtworkUrl);
+            }
+            catch (Exception)
+            {
+                sequence = new PlaybackSequence(result, [], null);
+            }
+        }
+        OpenPlayer(result, sequence, resumeSeconds);
+    }
+
+    public void PlayLocal(string path, double? resumeSeconds = null)
+    {
         try
         {
-            OpenPlayer(result, new PlaybackSequence(result, _allEntries, _artwork));
+            var (result, sequence) = LocalMedia(path);
+            OpenPlayer(result, sequence, resumeSeconds);
         }
         catch (Exception error)
         {
@@ -570,93 +932,60 @@ public sealed partial class MainViewModel : ObservableObject
         }
     }
 
-    [RelayCommand]
-    private void PlayEntry(EntryViewModel? item)
+    /// A downloaded file and its folder as the queue. Uses the Offline Library source so history matches.
+    private static (GlobalSearchResult, PlaybackSequence) LocalMedia(string path)
     {
-        if (item?.IsVideo == true) Play(item.Entry);
-    }
-
-    [RelayCommand]
-    private async Task PlayResultAsync(GlobalResultViewModel? item)
-    {
-        if (item is null) return;
-        var result = item.Result;
-        PlaybackSequence sequence;
-        try
-        {
-            // The play queue is the video's own folder, not the search results.
-            var listing = await _services.Directory.ListingAsync(result.Entry.Url.Parent(), new UrlBoundary(result.CategoryRoot));
-            sequence = new PlaybackSequence(result, listing.Entries, listing.ArtworkUrl);
-        }
-        catch (Exception)
-        {
-            sequence = new PlaybackSequence(result, [], null);
-        }
-        OpenPlayer(result, sequence);
-    }
-
-    public void PlayLocal(string path)
-    {
-        var file = new Uri(Path.GetFullPath(path));
-        var folder = new Uri(Path.GetDirectoryName(Path.GetFullPath(path)) + Path.DirectorySeparatorChar);
+        var full = Path.GetFullPath(path);
+        var folder = new Uri(Path.GetDirectoryName(full) + Path.DirectorySeparatorChar);
         var siblings = Directory.EnumerateFiles(folder.LocalPath)
             .Select(f => new DirectoryEntry(Path.GetFileName(f), new Uri(f), EntryKind.File))
             .ToList();
-        var entry = new DirectoryEntry(Path.GetFileName(path), file, EntryKind.File);
-        var result = new GlobalSearchResult(Guid.Empty, "Offline", folder, entry, entry.Name, null);
-        try
-        {
-            OpenPlayer(result, new PlaybackSequence(result, siblings, null));
-        }
-        catch (Exception error)
-        {
-            ErrorMessage = error.Message;
-        }
+        var entry = new DirectoryEntry(Path.GetFileName(full), new Uri(full), EntryKind.File, new FileInfo(full).Length);
+        var result = new GlobalSearchResult(OfflineLibrary.LocalSourceId, "Downloaded", folder, entry, entry.Name, null);
+        return (result, new PlaybackSequence(result, siblings, null));
     }
 
-    /// Plays a video given on the command line: an http(s) URL or a local file.
+    /// Plays a video given on the command line (an http(s) URL or a local file) in a stand-alone player window.
     public async void PlayTarget(string target)
     {
+        GlobalSearchResult result;
+        PlaybackSequence sequence;
         if (File.Exists(target))
         {
-            PlayLocal(target);
-            return;
+            (result, sequence) = LocalMedia(target);
         }
-        if (!Uri.TryCreate(target, UriKind.Absolute, out var url) || url.Scheme is not ("http" or "https"))
+        else if (Uri.TryCreate(target, UriKind.Absolute, out var url) && url.Scheme is "http" or "https")
+        {
+            var folder = url.Parent();
+            var entry = new DirectoryEntry(url.LastPathComponent(), url, EntryKind.File);
+            result = new GlobalSearchResult(Guid.Empty, folder.Host, folder, entry, entry.Name, null);
+            try
+            {
+                var listing = await _services.Directory.ListingAsync(folder, new UrlBoundary(folder));
+                sequence = new PlaybackSequence(result, listing.Entries, listing.ArtworkUrl);
+            }
+            catch (Exception)
+            {
+                // Not a directory listing; play the single file.
+                sequence = new PlaybackSequence(result, [], null);
+            }
+        }
+        else
         {
             ErrorMessage = $"Cannot play \"{target}\": not a video file or http(s) address.";
             return;
         }
-        var folder = url.Parent();
-        var entry = new DirectoryEntry(url.LastPathComponent(), url, EntryKind.File);
-        var result = new GlobalSearchResult(Guid.Empty, folder.Host, folder, entry, entry.Name, null);
-        PlaybackSequence sequence;
-        try
-        {
-            var listing = await _services.Directory.ListingAsync(folder, new UrlBoundary(folder));
-            sequence = new PlaybackSequence(result, listing.Entries, listing.ArtworkUrl);
-        }
-        catch (Exception)
-        {
-            // Not a directory listing; play the single file.
-            sequence = new PlaybackSequence(result, [], null);
-        }
-        OpenPlayer(result, sequence);
+        if (CreatePlayer() is not { } player) return;
+        ShowPlayerWindow?.Invoke(player);
+        player.Load(result, sequence);
     }
 
-    private PlayerViewModel? _player;
-
-    private void OpenPlayer(GlobalSearchResult result, PlaybackSequence sequence)
+    private PlayerViewModel? CreatePlayer()
     {
-        if (_player is { IsClosed: false })
-        {
-            _player.Load(result, sequence);
-            ShowPlayer?.Invoke(_player);
-            return;
-        }
+        PlayerViewModel player;
         try
         {
-            _player = new PlayerViewModel(_services);
+            player = new PlayerViewModel(_services);
         }
         catch (Exception error)
         {
@@ -664,10 +993,64 @@ public sealed partial class MainViewModel : ObservableObject
                 ? "The video player could not start (libVLC is missing): " + error.Message
                 : "The video player needs libVLC. Arch: 'sudo pacman -S libvlc vlc-plugins-base vlc-plugins-video-output vlc-plugin-ffmpeg vlc-plugin-matroska vlc-plugin-pulse'. "
                   + "Debian/Ubuntu: 'sudo apt install libvlc5 vlc-plugin-base vlc-plugin-video-output'. (" + error.Message + ")";
-            return;
+            return null;
         }
-        ShowPlayer?.Invoke(_player);
-        _player.Load(result, sequence);
+        player.PlaybackPreferences = _hooks;
+        player.SkipMarkers = _hooks;
+        player.EpisodeQueue = _hooks;
+        player.VersionChooser = _hooks;
+        player.Notice += ShowToast;
+        player.PlaybackEnded += media => Entertainment.MarkPlaybackEnded(media);
+        player.PositionSaved += (media, seconds, duration) => Entertainment.RecordPlayback(media, seconds, duration);
+        player.OnlineSubtitlesRequested += media => _ = FindSubtitlesAsync(player, media);
+        return player;
+    }
+
+    private async Task FindSubtitlesAsync(PlayerViewModel player, GlobalSearchResult media)
+    {
+        if (Windows?.OwnerWindow is not { } owner) return;
+        try
+        {
+            var path = await Dialogs.ShowOnlineSubtitlesAsync(owner, media);
+            if (path is not null) player.LoadSubtitleFile(path, media.Id);
+        }
+        catch (Exception error)
+        {
+            ShowToast(error.Message);
+        }
+    }
+
+    private void OpenPlayer(GlobalSearchResult result, PlaybackSequence sequence, double? resumeSeconds = null)
+    {
+        if (Player is not { IsClosed: false })
+        {
+            if (CreatePlayer() is not { } created) return;
+            created.BackToLibraryRequested += OnBackToLibrary;
+            created.PropertyChanged += OnPlayerChanged;
+            Player = created;
+        }
+        var player = Player;
+        Queue.IsOpen = false;
+        IsPlayerVisible = true;
+        ShowPlayer?.Invoke(player);
+        player.Load(result, sequence, resume: true, resumeSeconds: resumeSeconds);
+    }
+
+    private void OnPlayerChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName != nameof(PlayerViewModel.IsFullscreen)) return;
+        OnPropertyChanged(nameof(IsPlayerFullscreen));
+        OnPropertyChanged(nameof(ShowChrome));
+        OnPropertyChanged(nameof(ShowIndexCompletion));
+        OnPropertyChanged(nameof(ShowDownloadFooter));
+    }
+
+    /// Stop, Back to Library or the last video finishing: the preserved browser, filters and inspector return.
+    private void OnBackToLibrary()
+    {
+        Queue.IsOpen = false;
+        IsPlayerVisible = false;
+        OnPropertyChanged(nameof(IsPlayerFullscreen));
     }
 
     [RelayCommand]
@@ -711,15 +1094,36 @@ public sealed partial class MainViewModel : ObservableObject
         }
     }
 
-    // ---------- Settings and messages ----------
+    // ---------- Settings, dialogs and messages ----------
+
+    private async Task WithOwner(Func<Avalonia.Controls.Window, Task> show)
+    {
+        if (Windows?.OwnerWindow is not { } owner) return;
+        try
+        {
+            await show(owner);
+        }
+        catch (Exception error)
+        {
+            ErrorMessage = error.Message;
+        }
+    }
 
     [RelayCommand]
     private async Task OpenSettingsAsync()
     {
-        if (ShowSettingsDialog is not null) await ShowSettingsDialog();
+        await WithOwner(owner => Dialogs.ShowSettingsAsync(owner));
         Store.Settings.Clamp();
         SaveStore();
+        _services.IndexRefresh.Mode = Store.Settings.IndexingMode;
+        App.ApplyTheme(Store.Settings.Theme);
+        OnPropertyChanged(nameof(ThemeLabel));
+        OnPropertyChanged(nameof(ThemeIcon));
+        // A new TMDB token starts enrichment after the reload.
+        _ = Entertainment.ReloadAsync();
     }
+
+    [RelayCommand] private Task OpenAboutAsync() => WithOwner(owner => Dialogs.ShowAboutAsync(owner));
 
     [RelayCommand]
     private void CycleTheme()
@@ -727,8 +1131,8 @@ public sealed partial class MainViewModel : ObservableObject
         Store.Settings.Theme = Store.Settings.Theme.Next();
         App.ApplyTheme(Store.Settings.Theme);
         OnPropertyChanged(nameof(ThemeLabel));
+        OnPropertyChanged(nameof(ThemeIcon));
         SaveStore();
-        ShowToast("Theme: " + Store.Settings.Theme);
     }
 
     [RelayCommand]

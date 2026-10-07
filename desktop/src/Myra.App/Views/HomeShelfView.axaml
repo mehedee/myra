@@ -1,0 +1,87 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Myra.App.ViewModels"
+             xmlns:views="using:Myra.App.Views"
+             x:Class="Myra.App.Views.HomeShelfView"
+             x:DataType="vm:HomeShelfViewModel">
+  <!-- One Home row of poster cards (macOS HomeView.shelf + EntertainmentCard). -->
+  <StackPanel Spacing="8">
+    <Grid ColumnDefinitions="Auto,Auto,*,Auto" ColumnSpacing="10">
+      <TextBlock Text="{Binding Name}" Classes="title" />
+      <TextBlock Grid.Column="1" Text="{Binding Count}" Opacity="0.6" FontSize="18" VerticalAlignment="Bottom" Margin="0,0,0,2" />
+      <Button Grid.Column="3" Content="{Binding ShowAllLabel}" FontSize="12" IsVisible="{Binding CanExpand}"
+              Command="{Binding ToggleExpandedCommand}" />
+    </Grid>
+    <TextBlock Text="{Binding Subtitle}" Classes="caption" />
+    <TextBlock Text="{Binding EmptyMessage}" Opacity="0.6" Margin="0,12" IsVisible="{Binding IsEmpty}" />
+    <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled" IsVisible="{Binding HasCards}">
+      <ItemsControl ItemsSource="{Binding Cards}" Margin="0,0,0,10">
+        <ItemsControl.ItemsPanel>
+          <ItemsPanelTemplate>
+            <VirtualizingStackPanel Orientation="Horizontal" />
+          </ItemsPanelTemplate>
+        </ItemsControl.ItemsPanel>
+        <ItemsControl.ItemTemplate>
+          <DataTemplate x:DataType="vm:HomeCardViewModel">
+            <StackPanel Width="170" Spacing="6" Margin="0,0,16,0">
+              <Button Classes="plain" Command="{Binding Home.DetailsCommand}" CommandParameter="{Binding}"
+                      ToolTip.Tip="Details and versions" Cursor="Hand">
+                <Border Width="170" Height="235" CornerRadius="12" ClipToBounds="True"
+                        Background="{DynamicResource SystemControlBackgroundBaseLowBrush}">
+                  <Panel>
+                    <PathIcon Data="{StaticResource IconTv}" Width="40" Height="40" Opacity="0.45" IsVisible="{Binding IsSeries}" />
+                    <PathIcon Data="{StaticResource IconMovie}" Width="40" Height="40" Opacity="0.45" IsVisible="{Binding IsMovie}" />
+                    <Image views:ShellImage.Url="{Binding PosterUrl}" Stretch="UniformToFill" />
+                    <Border VerticalAlignment="Bottom" HorizontalAlignment="Left" Padding="6,4" Margin="0"
+                            Background="{DynamicResource SystemControlBackgroundAltHighBrush}" Opacity="0.92"
+                            IsVisible="{Binding IsWatched}" CornerRadius="0,8,0,0">
+                      <StackPanel Orientation="Horizontal" Spacing="4">
+                        <PathIcon Data="{StaticResource IconCheckCircle}" Width="12" Height="12" />
+                        <TextBlock Text="Watched" FontSize="11" FontWeight="Bold" />
+                      </StackPanel>
+                    </Border>
+                    <Border VerticalAlignment="Top" HorizontalAlignment="Right" Padding="6,3" Margin="6"
+                            Background="{DynamicResource SystemAccentColor}" CornerRadius="8"
+                            IsVisible="{Binding HasNewEpisodes}">
+                      <TextBlock Text="New episodes" FontSize="11" FontWeight="Bold" Foreground="White" />
+                    </Border>
+                  </Panel>
+                </Border>
+              </Button>
+              <TextBlock Text="{Binding DisplayName}" FontWeight="SemiBold" TextWrapping="Wrap" MaxLines="2" Height="38"
+                         TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding DisplayName}" />
+              <Grid ColumnDefinitions="*,Auto">
+                <TextBlock Text="{Binding YearOrKind}" Classes="caption" />
+                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="3" IsVisible="{Binding HasRating}" ToolTip.Tip="{Binding RatingTip}">
+                  <PathIcon Data="{StaticResource IconStar}" Width="11" Height="11" Foreground="#E8B500" />
+                  <TextBlock Text="{Binding RatingText}" FontSize="11.5" Foreground="#C99A00" />
+                </StackPanel>
+              </Grid>
+              <TextBlock Text="{Binding SourcesText}" Classes="caption" FontSize="10.5" TextTrimming="CharacterEllipsis" />
+              <StackPanel Spacing="2" IsVisible="{Binding HasResume}">
+                <ProgressBar Value="{Binding ResumePercent}" Maximum="100" Height="4" MinHeight="4" MinWidth="0" />
+                <TextBlock Text="{Binding ResumeText}" Classes="caption" FontSize="10.5" />
+              </StackPanel>
+              <StackPanel Orientation="Horizontal" Spacing="6">
+                <Button Classes="accent" Command="{Binding Home.PlayCommand}" CommandParameter="{Binding}" Padding="10,5">
+                  <StackPanel Orientation="Horizontal" Spacing="5">
+                    <PathIcon Data="{StaticResource IconPlay}" Width="11" Height="11" />
+                    <TextBlock Text="{Binding PlayLabel}" />
+                  </StackPanel>
+                </Button>
+                <Button Classes="icon" ToolTip.Tip="{Binding WatchlistTip}"
+                        Command="{Binding Home.ToggleWatchlistCommand}" CommandParameter="{Binding}">
+                  <PathIcon Data="{Binding InWatchlist, Converter={x:Static vm:ShellConverters.Bookmark}}" />
+                </Button>
+                <!-- Overflow menu: ellipsis only, no chevron. -->
+                <Button Classes="icon plain" Padding="6" ToolTip.Tip="More" Click="OnMoreClick" Tag="{Binding}">
+                  <PathIcon Data="{StaticResource IconMore}" />
+                </Button>
+              </StackPanel>
+            </StackPanel>
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+    </ScrollViewer>
+  </StackPanel>
+</UserControl>

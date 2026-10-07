@@ -17,13 +17,17 @@ public partial class App : Application
 
     public override void Initialize() => AvaloniaXamlLoader.Load(this);
 
+    /// Builds the secondary windows and dialogs. Switch to the real implementation in one place:
+    /// <c>services => new AppDialogs(services)</c>.
+    public static Func<AppServices, IAppDialogs> CreateDialogs { get; set; } = _ => new NullAppDialogs();
+
     public override void OnFrameworkInitializationCompleted()
     {
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
             var services = new AppServices();
-            var main = new MainViewModel(services);
             ApplyTheme(services.Store.Settings.Theme);
+            var main = new MainViewModel(services, CreateDialogs(services));
             desktop.MainWindow = new MainWindow { DataContext = main };
             desktop.ShutdownRequested += (_, _) => services.Shutdown();
             // Logout, systemd and `kill` send SIGTERM; shut down through the normal path so state is saved.

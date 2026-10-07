@@ -1,0 +1,72 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Myra.App.ViewModels"
+             xmlns:views="using:Myra.App.Views"
+             x:Class="Myra.App.Views.InspectorView"
+             x:DataType="vm:InspectorViewModel">
+  <!-- macOS MediaInspectorView: online information first (plot between rating and Play), then local details. -->
+  <UserControl.DataTemplates>
+    <DataTemplate DataType="vm:InspectorField">
+      <StackPanel Spacing="2" Margin="0,0,0,10">
+        <TextBlock Text="{Binding Name}" Classes="caption" />
+        <SelectableTextBlock Text="{Binding Value}" TextWrapping="Wrap" />
+      </StackPanel>
+    </DataTemplate>
+  </UserControl.DataTemplates>
+  <ScrollViewer HorizontalScrollBarVisibility="Disabled">
+    <StackPanel Margin="16" Spacing="14">
+      <Grid ColumnDefinitions="*,Auto">
+        <TextBlock Text="Information" FontWeight="SemiBold" FontSize="15" />
+        <Button Grid.Column="1" Classes="icon plain" Command="{Binding CloseCommand}" ToolTip.Tip="Close Information">
+          <PathIcon Data="{StaticResource IconClose}" />
+        </Button>
+      </Grid>
+      <TextBlock Text="Online Information" FontWeight="SemiBold" />
+      <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding IsLoading}">
+        <ProgressBar IsIndeterminate="True" Width="80" MinWidth="0" VerticalAlignment="Center" />
+        <TextBlock Text="Loading from OMDb…" Classes="caption" />
+      </StackPanel>
+      <StackPanel Spacing="6" IsVisible="{Binding HasMetadataError}">
+        <TextBlock Text="{Binding MetadataError}" Classes="caption" TextWrapping="Wrap" />
+        <Button Content="Retry" Command="{Binding LoadCommand}" />
+      </StackPanel>
+      <Border CornerRadius="8" ClipToBounds="True" MaxHeight="240" IsVisible="{Binding HasArtwork}" HorizontalAlignment="Left">
+        <Image views:ShellImage.Url="{Binding Artwork}" views:ShellImage.DecodeWidth="560" Stretch="Uniform" MaxHeight="240" />
+      </Border>
+      <SelectableTextBlock Text="{Binding DisplayTitle}" FontSize="20" FontWeight="Bold" TextWrapping="Wrap" />
+      <StackPanel Orientation="Horizontal" Spacing="6" IsVisible="{Binding HasRating}">
+        <PathIcon Data="{StaticResource IconStar}" Width="13" Height="13" Foreground="#E8B500" />
+        <TextBlock Text="{Binding ImdbRating}" Foreground="#C99A00" />
+      </StackPanel>
+      <SelectableTextBlock Text="{Binding Plot}" TextWrapping="Wrap" IsVisible="{Binding HasPlot}" />
+      <Button Classes="accent" Command="{Binding PlayCommand}" HorizontalAlignment="Left">
+        <StackPanel Orientation="Horizontal" Spacing="6">
+          <PathIcon Data="{StaticResource IconPlay}" Width="12" Height="12" />
+          <TextBlock Text="Play" />
+        </StackPanel>
+      </Button>
+      <StackPanel IsVisible="{Binding HasMetadata}">
+        <ItemsControl ItemsSource="{Binding OnlineFields}" />
+        <Button Classes="link" Content="View on IMDb" Command="{Binding OpenImdbCommand}" IsVisible="{Binding HasImdbUrl}" Margin="0,0,0,6" />
+        <TextBlock Text="{Binding License}" Classes="caption" FontSize="10.5" />
+      </StackPanel>
+      <Expander Header="Correct Match" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
+        <StackPanel Spacing="8">
+          <TextBlock Text="Automatic filename matches may be incorrect. Enter a title/year or IMDb ID." Classes="caption" TextWrapping="Wrap" />
+          <TextBox Text="{Binding CorrectionTitle}" Watermark="Title" />
+          <TextBox Text="{Binding CorrectionYear}" Watermark="Release year (optional)" />
+          <TextBox Text="{Binding CorrectionImdbId}" Watermark="IMDb ID, e.g. tt0133093" />
+          <Button Content="Look Up" Command="{Binding LookUpCommand}" />
+        </StackPanel>
+      </Expander>
+      <Separator />
+      <TextBlock Text="Local Information" FontWeight="SemiBold" />
+      <ItemsControl ItemsSource="{Binding LocalFields}" />
+      <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding IsProbing}">
+        <ProgressBar IsIndeterminate="True" Width="80" MinWidth="0" VerticalAlignment="Center" />
+        <TextBlock Text="Inspecting stream…" Classes="caption" />
+      </StackPanel>
+      <TextBlock Text="{Binding TechnicalError}" Classes="caption" TextWrapping="Wrap" IsVisible="{Binding HasTechnicalError}" />
+    </StackPanel>
+  </ScrollViewer>
+</UserControl>

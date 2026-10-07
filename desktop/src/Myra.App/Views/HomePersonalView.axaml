@@ -1,0 +1,29 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Myra.App.ViewModels"
+             xmlns:views="using:Myra.App.Views"
+             x:Class="Myra.App.Views.HomePersonalView"
+             x:DataType="vm:HomeViewModel">
+  <!-- Personal section: the Watchlist and each collection, with every title shown. -->
+  <ScrollViewer HorizontalScrollBarVisibility="Disabled">
+    <StackPanel Margin="28,20,28,28" Spacing="24">
+      <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
+        <TextBlock Text="Organize titles without moving or deleting their source files." Opacity="0.7" VerticalAlignment="Center" TextWrapping="Wrap" />
+        <Button Grid.Column="1" Content="Manage collections" Command="{Binding ManageCollectionsCommand}" />
+        <Button Grid.Column="2" Content="Export / Import" Command="{Binding ExportImportCommand}" />
+      </Grid>
+      <ItemsControl ItemsSource="{Binding PersonalShelves}">
+        <ItemsControl.ItemsPanel>
+          <ItemsPanelTemplate>
+            <StackPanel Spacing="24" />
+          </ItemsPanelTemplate>
+        </ItemsControl.ItemsPanel>
+        <ItemsControl.ItemTemplate>
+          <DataTemplate x:DataType="vm:HomeShelfViewModel">
+            <views:HomeShelfView />
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+    </StackPanel>
+  </ScrollViewer>
+</UserControl>
