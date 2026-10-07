@@ -1,6 +1,6 @@
 using Avalonia;
 using Avalonia.Controls;
-using Myra.App.ViewModels;
+using Myra.Core;
 
 namespace Myra.App.Views;
 
@@ -8,7 +8,7 @@ namespace Myra.App.Views;
 /// Esc and Not Now return false; nothing is sent then.
 public sealed class AiConsentDialog : AppDialog
 {
-    public AiConsentDialog(AiConsentKind kind, string provider) : base(Heading(kind), 480)
+    public AiConsentDialog(AiPermission kind, string provider) : base(Heading(kind), 480)
     {
         Kind = kind;
         var allow = Action(AllowLabel(kind), accent: true, isDefault: true);
@@ -25,28 +25,28 @@ public sealed class AiConsentDialog : AppDialog
         Content = panel;
     }
 
-    public AiConsentKind Kind { get; }
+    public AiPermission Kind { get; }
 
-    private static string Heading(AiConsentKind kind) => kind switch
+    private static string Heading(AiPermission kind) => kind switch
     {
-        AiConsentKind.Catalogue => "Send library information to the cloud?",
-        AiConsentKind.History => "Include your viewing history?",
+        AiPermission.Cloud => "Send library information to the cloud?",
+        AiPermission.History => "Include your viewing history?",
         _ => "Send subtitle text?",
     };
 
-    private static string AllowLabel(AiConsentKind kind) => kind switch
+    private static string AllowLabel(AiPermission kind) => kind switch
     {
-        AiConsentKind.Catalogue => "Allow Cloud Requests",
-        AiConsentKind.History => "Include History",
+        AiPermission.Cloud => "Allow Cloud Requests",
+        AiPermission.History => "Include History",
         _ => "Send Subtitle Excerpt",
     };
 
-    public static string Body(AiConsentKind kind, string provider) => kind switch
+    public static string Body(AiPermission kind, string provider) => kind switch
     {
-        AiConsentKind.Catalogue =>
+        AiPermission.Cloud =>
             $"Myra will send your request and a short list of matching titles to {provider}: names, years, genres, ratings and short descriptions. "
             + "Media links, file paths, folder names and network addresses are not sent. Your provider may charge your account for each request.",
-        AiConsentKind.History =>
+        AiPermission.History =>
             $"This request needs to know which titles you watched, have not finished, or saved to your Watchlist. "
             + $"Myra will send these markers for the listed titles, and simple viewing counts, to {provider}.",
         _ =>
@@ -54,10 +54,10 @@ public sealed class AiConsentDialog : AppDialog
             + "Subtitles can contain spoilers. The text is used for this request only and is not saved.",
     };
 
-    private static string Footnote(AiConsentKind kind) => kind switch
+    private static string Footnote(AiPermission kind) => kind switch
     {
-        AiConsentKind.Catalogue => "Myra remembers this choice. You can turn it off at any time in AI Settings.",
-        AiConsentKind.History => "Myra remembers this choice. Turn off \"Include watch-history information\" in AI Settings to stop.",
+        AiPermission.Cloud => "Myra remembers this choice. You can turn it off at any time in AI Settings.",
+        AiPermission.History => "Myra remembers this choice. Turn off \"Include watch-history information\" in AI Settings to stop.",
         _ => "Myra remembers this choice. Turn off \"Allow selected subtitle text\" in AI Settings to stop.",
     };
 }

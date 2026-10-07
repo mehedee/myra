@@ -236,7 +236,7 @@ public sealed class AiService : IDisposable
     }
 
     /// Runs one explicit request. Updates Response / ErrorMessage and returns the same result.
-    /// Order: feature enabled → cloud consent → subtitle consent → recap rules → key → cache →
+    /// Order: feature enabled → cloud / history / subtitle permissions → recap rules → key → cache →
     /// [intent generation] → local shortlist → result generation → validation.
     public async Task<AiOutcome> ExecuteAsync(AiRequest request, CancellationToken cancellationToken = default)
     {
@@ -259,13 +259,12 @@ public sealed class AiService : IDisposable
             var provider = _providers.GetValueOrDefault(config.Provider);
             if (provider is null || !config.IsEnabled(feature))
                 throw new AiException(AiErrorKind.Unavailable, "This AI feature is disabled in Settings.");
-            if (provider.IsCloud && !config.CloudConsent) throw new AiException(AiErrorKind.Consent);
-            if (provider.IsCloud && request.SubtitleText is not null && !config.ShareSubtitles)
-                throw new AiException(AiErrorKind.Consent,
-                    "Allow selected subtitle text in cloud recap requests in AI Settings before sending subtitles.");
+            var safePrompt = AiPrivacy.Text(request.Prompt, 1200);
+            // Every permission is checked before the key is read, the cache is used or a generation is counted.
+            if (Missing(provider, config, request.Feature, safePrompt, request.SubtitleText is not null) is { Count: > 0 } missing)
+                throw AiException.MissingPermission(missing.Min);
             if (feature == AiFeature.Recap) RequireCompletedEpisode(request);
             if (provider.Availability() is { } reason) throw new AiException(AiErrorKind.Unavailable, reason);
-            var safePrompt = AiPrivacy.Text(request.Prompt, 1200);
             if (request.Titles.Count == 0 && feature != AiFeature.Preferences)
                 throw new AiException(AiErrorKind.MissingContext, "Index your library before requesting suggestions.");
             var key = ReadKey(provider);
@@ -290,7 +289,8 @@ public sealed class AiService : IDisposable
             AiSearchIntent? intent = null;
             if (feature.ExtractsIntent())
             {
-                ConsumeRequest(config);
+                // Two generations: refuse before the first one when the second cannot run today.
+                ConsumeRequest(config, needed: 2);
                 var raw = await Generate(provider, config, key, IntentInstructions, $"User request (data): {safePrompt}", 350, token);
                 intent = AiPrivacy.Decode<AiSearchIntent>(raw);
             }
@@ -350,6 +350,33 @@ public sealed class AiService : IDisposable
         }
     }
 
+    /// The cloud permissions this request needs and the current settings do not grant, in prompt order
+    /// (Cloud, History, Subtitles). Empty for local providers and disabled AI. The UI asks for each one
+    /// before ExecuteAsync; ExecuteAsync refuses the request while one is missing.
+    public IReadOnlySet<AiPermission> MissingPermissions(AiRequest request)
+    {
+        AiSettings config;
+        IAiProvider? provider;
+        lock (_lock)
+        {
+            config = _settings;
+            provider = _providers.GetValueOrDefault(config.Provider);
+        }
+        return provider is null
+            ? new SortedSet<AiPermission>()
+            : Missing(provider, config, request.Feature, AiPrivacy.Text(request.Prompt, 1200), request.SubtitleText is not null);
+    }
+
+    private static SortedSet<AiPermission> Missing(IAiProvider provider, AiSettings config, AiFeature feature, string safePrompt, bool hasSubtitles)
+    {
+        var missing = new SortedSet<AiPermission>();
+        if (!provider.IsCloud) return missing;
+        if (!config.CloudConsent) missing.Add(AiPermission.Cloud);
+        if (!config.ShareHistory && AiConsent.MayUseHistory(feature, safePrompt)) missing.Add(AiPermission.History);
+        if (hasSubtitles && !config.ShareSubtitles) missing.Add(AiPermission.Subtitles);
+        return missing;
+    }
+
     private bool IsCurrent(Guid id)
     {
         lock (_lock) return _requestId == id;
@@ -385,10 +412,7 @@ public sealed class AiService : IDisposable
         var title = versionId is null ? null : request.Titles.FirstOrDefault(t =>
             request.SelectedIds.Contains(t.Id) && t.Versions.Any(v => v.Id == versionId));
         var version = title?.Versions.First(v => v.Id == versionId);
-        var completed = title is not null && version is { Season: not null, Episode: not null }
-            && (request.Personal.Watched.Contains(title.Id)
-                || (version.Duration > 0 && version.ProgressSeconds >= version.Duration - 10)
-                || (request.Personal.History.TryGetValue(version.Id, out var record) && record.Duration > 0 && record.Seconds >= record.Duration - 10));
+        var completed = title is not null && version is not null && AiWorkspace.IsCompletedEpisode(title, version, request.Personal);
         if (!completed || string.IsNullOrWhiteSpace(request.SubtitleText))
             throw new AiException(AiErrorKind.MissingContext,
                 "Recaps need a completed selected episode and its imported subtitles. No episode-specific synopsis is cached.");
@@ -435,12 +459,14 @@ public sealed class AiService : IDisposable
 
     // ---------- Daily limit ----------
 
-    private void ConsumeRequest(AiSettings config)
+    /// Counts one generation. needed: generations this request still has to make. All of them must fit
+    /// in today's limit, so a request never spends the limit on a first half it cannot finish.
+    private void ConsumeRequest(AiSettings config, int needed = 1)
     {
         lock (_lock)
         {
             ResetDayIfNeeded();
-            if (_requestsToday >= Math.Clamp(config.DailyRequestLimit, 1, 500)) throw new AiException(AiErrorKind.Limit);
+            if (_requestsToday + needed > Math.Clamp(config.DailyRequestLimit, 1, 500)) throw new AiException(AiErrorKind.Limit);
             _requestsToday++;
             SaveUsage();
         }

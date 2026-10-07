@@ -29,17 +29,23 @@ public static class AiWorkspace
         catalogue.Where(t => query.Length == 0 || t.DisplayName.Contains(query, StringComparison.CurrentCultureIgnoreCase))
             .Take(limit).ToList();
 
-    /// Episodes of a series that count as completed (title watched, or saved progress within 10 s of the end).
-    /// These are the only episodes a recap may use.
+    /// Episodes of a series that count as completed. These are the only episodes a recap may use, and
+    /// AiService accepts exactly these (same rule: IsCompletedEpisode).
     public static List<EntertainmentVersion> CompletedEpisodes(EntertainmentTitle title, EntertainmentPersonalData personal)
     {
         if (title.Kind != EntertainmentKind.Series) return [];
         return title.Versions
-            .Where(v => v.Episode is not null
-                        && (personal.Watched.Contains(title.Id)
-                            || (personal.History.TryGetValue(v.Id, out var record) && record.Duration > 0 && record.Seconds >= record.Duration - 10)))
+            .Where(v => IsCompletedEpisode(title, v, personal))
             .OrderBy(v => v.Season ?? 0).ThenBy(v => v.Episode ?? 0).ToList();
     }
+
+    /// The macOS store rule: the file has a season and an episode number, and the title is marked watched
+    /// or the file's saved progress is within 10 s of its end.
+    public static bool IsCompletedEpisode(EntertainmentTitle title, EntertainmentVersion version, EntertainmentPersonalData personal) =>
+        version is { Season: not null, Episode: not null }
+        && (personal.Watched.Contains(title.Id)
+            || (version.Duration > 0 && version.ProgressSeconds >= version.Duration - 10)
+            || (personal.History.TryGetValue(version.Id, out var record) && record.Duration > 0 && record.Seconds >= record.Duration - 10));
 
     /// Adds the plan budget and recap episode to the user's text, as macOS does before ExecuteAsync.
     public static string ComposePrompt(AiFeature feature, string prompt, int? availableMinutes = null, EntertainmentVersion? recapEpisode = null, string? subtitleName = null)

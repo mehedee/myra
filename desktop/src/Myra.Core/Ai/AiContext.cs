@@ -68,15 +68,18 @@ public sealed partial record AiContext(string Prompt, IReadOnlyDictionary<string
         var settings = input.Settings;
         var intent = input.Intent?.Normalized(prompt);
         var includeHistory = !input.IsCloud || settings.ShareHistory;
+        // Safety net: AiService checks AiConsent.MayUseHistory before any generation is used.
         if (input.IsCloud && !settings.ShareHistory
             && (intent?.Unwatched == true || intent?.Unfinished == true || intent?.Watchlisted == true || feature == AiFeature.Insights))
-            throw new AiException(AiErrorKind.MissingContext,
-                "Enable history sharing in AI Settings for cloud requests about watched titles, unfinished titles, or your watchlist.");
+            throw AiException.MissingPermission(AiPermission.History);
 
         var selected = input.SelectedIds.ToHashSet(StringComparer.Ordinal);
         var reference = input.Titles.FirstOrDefault(t => selected.Contains(t.Id));
         var words = Words((intent?.Query ?? prompt).ToLowerInvariant());
-        int? budget = feature == AiFeature.Plan ? intent?.MaximumMinutes ?? TimeBudget(prompt) : null;
+        // The user's budget from the request ("Available time: 120 minutes") wins over the model's.
+        int? budget = feature == AiFeature.Plan && TimeBudget(prompt) is { } userBudget
+            ? Math.Min(intent?.MaximumMinutes ?? userBudget, userBudget)
+            : null;
         var picked = new List<(EntertainmentTitle Title, int Score)>();
 
         foreach (var title in input.Titles)

@@ -7,17 +7,6 @@ using Myra.Core;
 
 namespace Myra.App.ViewModels;
 
-/// The three separate cloud permissions. The workspace asks for each one before the first request that needs it.
-public enum AiConsentKind
-{
-    /// Request text and a short list of catalogue titles (AiSettings.CloudConsent).
-    Catalogue,
-    /// Watched, unfinished and watchlist markers and local statistics (AiSettings.ShareHistory).
-    History,
-    /// An excerpt of imported subtitle text for a recap (AiSettings.ShareSubtitles).
-    Subtitles,
-}
-
 public sealed record AiFeatureChoice(AiFeature Feature)
 {
     public string Title => Feature.Title();
@@ -55,7 +44,7 @@ public sealed partial class AiWorkspaceViewModel : ObservableObject, IDisposable
     // ---------- Hooks set by the window (checks replace them) ----------
 
     /// Shows the consent prompt for one permission. Returns true when the user allows it.
-    public Func<AiConsentKind, string, Task<bool>>? AskConsent { get; set; }
+    public Func<AiPermission, string, Task<bool>>? AskConsent { get; set; }
 
     /// Lets the user choose a subtitle file. Returns its path, or null.
     public Func<Task<string?>>? PickSubtitleFile { get; set; }
@@ -238,12 +227,11 @@ public sealed partial class AiWorkspaceViewModel : ObservableObject, IDisposable
         {
             if (!await EnsureConsentAsync()) return;
             var outcome = await Ai.ExecuteAsync(BuildRequest());
-            // A cloud request about watched, unfinished or watchlist titles needs the history permission.
-            if (outcome is { Status: AiOutcomeStatus.Failed, Error: { Kind: AiErrorKind.MissingContext } error }
-                && error.Message.Contains("history sharing", StringComparison.OrdinalIgnoreCase)
-                && IsCloud && !Ai.Settings.ShareHistory)
+            // The core refuses a request while a permission is missing, before any generation is used.
+            // Settings can change between the check and the request: ask for that permission once, then retry.
+            if (outcome is { Status: AiOutcomeStatus.Failed, Error: { Kind: AiErrorKind.Consent, Permission: { } permission } })
             {
-                if (!await AskAsync(AiConsentKind.History)) return;
+                if (!await AskAsync(permission)) return;
                 outcome = await Ai.ExecuteAsync(BuildRequest());
             }
             if (_disposed) return;
@@ -283,47 +271,34 @@ public sealed partial class AiWorkspaceViewModel : ObservableObject, IDisposable
         RecapVersionId = IsRecap ? SelectedEpisode?.Version.Id : null,
     };
 
-    /// Words that make a request about viewing history. The core also refuses such cloud requests without permission.
-    private static readonly string[] HistoryWords =
-        ["watched", "unwatched", "unfinished", "watchlist", "watch list", "resume", "continue", "in progress", "history", "haven't seen", "not seen"];
-
-    private bool NeedsHistory() => Feature == AiFeature.Insights
-        || HistoryWords.Any(w => Prompt.Contains(w, StringComparison.OrdinalIgnoreCase));
-
-    /// Asks for each cloud permission this request needs and is still missing. Local providers need none.
+    /// Asks once for each cloud permission this request needs and is still missing (AiService.MissingPermissions).
+    /// When the user declines one, nothing is sent. Local providers need none.
     private async Task<bool> EnsureConsentAsync()
     {
-        if (!IsCloud) return true;
-        if (!Ai.Settings.CloudConsent && !await AskAsync(AiConsentKind.Catalogue)) return false;
-        if (NeedsHistory() && !Ai.Settings.ShareHistory)
-        {
-            var allowed = await AskAsync(AiConsentKind.History);
-            // Insights cannot work without history; other requests continue without it.
-            if (!allowed && Feature == AiFeature.Insights) return false;
-        }
-        if (IsRecap && _subtitleText is not null && !Ai.Settings.ShareSubtitles && !await AskAsync(AiConsentKind.Subtitles)) return false;
+        foreach (var permission in Ai.MissingPermissions(BuildRequest()))
+            if (!await AskAsync(permission)) return false;
         return true;
     }
 
-    private async Task<bool> AskAsync(AiConsentKind kind)
+    private async Task<bool> AskAsync(AiPermission permission)
     {
-        var allowed = AskConsent is not null && await AskConsent(kind, ProviderName);
+        var allowed = AskConsent is not null && await AskConsent(permission, ProviderName);
         if (!allowed)
         {
-            LocalMessage = kind switch
+            LocalMessage = permission switch
             {
-                AiConsentKind.Catalogue => "Nothing was sent. Myra AI needs your permission to contact the cloud provider.",
-                AiConsentKind.History => Feature == AiFeature.Insights
+                AiPermission.Cloud => "Nothing was sent. Myra AI needs your permission to contact the cloud provider.",
+                AiPermission.History => Feature == AiFeature.Insights
                     ? "Nothing was sent. Viewing Insights needs permission to include viewing history."
-                    : "Nothing was sent. Allow history sharing, or ask without mentioning watched, unfinished or watchlist titles.",
+                    : "Nothing was sent. Allow history sharing, or ask without mentioning unwatched, unfinished or watchlist titles.",
                 _ => "Nothing was sent. A cloud recap needs permission to send the subtitle excerpt.",
             };
             return false;
         }
-        Ai.UpdateSettings(s => kind switch
+        Ai.UpdateSettings(s => permission switch
         {
-            AiConsentKind.Catalogue => s with { CloudConsent = true },
-            AiConsentKind.History => s with { ShareHistory = true },
+            AiPermission.Cloud => s with { CloudConsent = true },
+            AiPermission.History => s with { ShareHistory = true },
             _ => s with { ShareSubtitles = true },
         });
         return true;

@@ -148,7 +148,7 @@ internal static class AiChecks
             aiWindow.KeyPress(Key.Enter, RawInputModifiers.None, PhysicalKey.Enter, null);
             await pump(() => Owned<AiConsentDialog>(aiWindow) is not null, 5000);
             var consent = Owned<AiConsentDialog>(aiWindow);
-            check(consent is { Kind: AiConsentKind.Catalogue } && http.Count == 0,
+            check(consent is { Kind: AiPermission.Cloud } && http.Count == 0,
                 "Enter asks Myra, and the consent prompt appears before any HTTP request");
             if (consent is not null)
             {
@@ -175,11 +175,25 @@ internal static class AiChecks
             var run = workspace.RunCommand.ExecuteAsync(null);
             await pump(() => Owned<AiConsentDialog>(aiWindow) is not null, 5000);
             var history = Owned<AiConsentDialog>(aiWindow);
-            check(history is { Kind: AiConsentKind.History }, "Viewing Insights asks for the history permission");
+            check(history is { Kind: AiPermission.History }, "Viewing Insights asks for the history permission");
             if (history is not null) Click(Named<Button>(history, "NotNowButton")!);
             await pump(() => run.IsCompleted, 3000);
             check(http.Count == before && !ai.Settings.ShareHistory && workspace.LocalMessage?.Contains("Nothing was sent") == true,
                 "Not Now sends nothing and keeps history private");
+
+            // A watchlist request asks for history before the paid intent generation; Not Now sends nothing.
+            workspace.SelectedFeature = workspace.Features.First(f => f.Feature == AiFeature.NaturalSearch);
+            workspace.Prompt = "comedies I saved to watch";
+            var requestsBefore = ai.RequestsToday;
+            run = workspace.RunCommand.ExecuteAsync(null);
+            await pump(() => Owned<AiConsentDialog>(aiWindow) is not null, 5000);
+            history = Owned<AiConsentDialog>(aiWindow);
+            check(history is { Kind: AiPermission.History }, "a \"saved to watch\" search asks for the history permission first");
+            if (history is not null) Click(Named<Button>(history, "NotNowButton")!);
+            await pump(() => run.IsCompleted, 3000);
+            check(http.Count == before && ai.RequestsToday == requestsBefore && !ai.Settings.ShareHistory
+                  && workspace.LocalMessage?.Contains("Nothing was sent") == true,
+                "declining history for a watchlist search sends nothing and uses no generation");
 
             // Reviewed action: preview, Apply, Undo.
             foreach (var id in services.Entertainment.Personal.Watchlist.ToList()) services.Entertainment.ToggleWatchlist(id);

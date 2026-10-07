@@ -278,10 +278,13 @@ public sealed record AiSearchIntent
             MinimumYear = ValidYear(MinimumYear) ? MinimumYear : null,
             MaximumYear = ValidYear(MaximumYear) ? MaximumYear : null,
             MinimumRating = rating,
-            Unwatched = Unwatched == true && !Mentions("unwatched", "not watched", "not seen", "haven't seen", "haven’t seen") ? null : Unwatched,
-            Unfinished = Unfinished == true && !Mentions("unfinished", "resume", "continue", "in progress") ? null : Unfinished,
-            Watchlisted = Watchlisted == true && !Mentions("watchlist", "watch list", "saved to watch") ? null : Watchlisted,
-            MaximumMinutes = MaximumMinutes is <= 0 ? null : MaximumMinutes,
+            Unwatched = Unwatched == true && !AiConsent.Mentions(prompt, AiConsent.UnwatchedWords) ? null : Unwatched,
+            Unfinished = Unfinished == true && !AiConsent.Mentions(prompt, AiConsent.UnfinishedWords) ? null : Unfinished,
+            Watchlisted = Watchlisted == true && !AiConsent.Mentions(prompt, AiConsent.WatchlistWords) ? null : Watchlisted,
+            // The user's budget wins. The model may only narrow it, never raise or invent it.
+            MaximumMinutes = MaximumMinutes is > 0 and var model && AiContext.TimeBudget(prompt) is { } budget && model <= budget
+                ? model
+                : null,
         };
     }
 
@@ -343,6 +346,43 @@ public sealed record AiSearchIntent
     };
 }
 
+/// The three separate cloud permissions (AiSettings.CloudConsent, ShareHistory, ShareSubtitles).
+public enum AiPermission
+{
+    /// Request text and a short list of catalogue titles.
+    Cloud,
+    /// Watched, unfinished and watchlist markers and local statistics.
+    History,
+    /// An excerpt of imported subtitle text for a recap.
+    Subtitles,
+}
+
+/// Decides from the request alone whether a cloud request may use viewing history. The word lists are
+/// the only source: AiSearchIntent.Normalized keeps a history filter only when the request uses them.
+public static class AiConsent
+{
+    public static readonly IReadOnlyList<string> UnwatchedWords = ["unwatched", "not watched", "not seen", "haven't seen"];
+    public static readonly IReadOnlyList<string> UnfinishedWords = ["unfinished", "resume", "continue", "in progress"];
+    public static readonly IReadOnlyList<string> WatchlistWords = ["watchlist", "watch list", "saved to watch"];
+
+    /// True when this feature and request text can need history: Viewing Insights always, and features
+    /// that extract search constraints when the request mentions unwatched, unfinished or watchlist titles.
+    public static bool MayUseHistory(AiFeature feature, string prompt) =>
+        feature == AiFeature.Insights
+        || (feature.ExtractsIntent()
+            && (Mentions(prompt, UnwatchedWords) || Mentions(prompt, UnfinishedWords) || Mentions(prompt, WatchlistWords)));
+
+    /// Case-insensitive phrase match. Curly apostrophes count as straight ones ("haven’t seen").
+    public static bool Mentions(string prompt, IEnumerable<string> words)
+    {
+        var text = Straighten(prompt);
+        return words.Any(w => text.Contains(w, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static string Straighten(string text) =>
+        text.Replace('\u2019', '\'').Replace('\u2018', '\'').Replace('\u02BC', '\'').Replace('\uFF07', '\'');
+}
+
 /// Raw model output before validation. Title IDs are model-facing aliases.
 public sealed record AiWireAction
 {
@@ -382,14 +422,26 @@ public enum AiErrorKind
 /// Every AI failure. Message is user-facing text (same wording as macOS where it exists).
 public sealed class AiException : Exception
 {
-    public AiException(AiErrorKind kind, string? message = null, int? status = null, Exception? inner = null)
+    public AiException(AiErrorKind kind, string? message = null, int? status = null, Exception? inner = null, AiPermission? permission = null)
         : base(message ?? DefaultMessage(kind, status), inner)
     {
         Kind = kind;
         Status = status;
+        Permission = permission;
     }
 
     public AiErrorKind Kind { get; }
+    /// For AiErrorKind.Consent: the missing permission. Nothing was sent and no generation was used.
+    public AiPermission? Permission { get; }
+
+    /// A cloud permission is missing (Kind = Consent).
+    public static AiException MissingPermission(AiPermission permission) => new(AiErrorKind.Consent, permission switch
+    {
+        AiPermission.History =>
+            "Enable history sharing in AI Settings for cloud requests about watched titles, unfinished titles, or your watchlist.",
+        AiPermission.Subtitles => "Allow selected subtitle text in cloud recap requests in AI Settings before sending subtitles.",
+        _ => null,
+    }, permission: permission);
     /// HTTP status for AiErrorKind.Http.
     public int? Status { get; }
 

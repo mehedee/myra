@@ -277,8 +277,8 @@ public class AiContextTests
 
         var error = Assert.Throws<AiException>(() => Prepare(values, AiFeature.Assistant, "unfinished",
             new AiSearchIntent { Unfinished = true }, cloud: true));
-        Assert.Equal(AiErrorKind.MissingContext, error.Kind);
-        Assert.Throws<AiException>(() => Prepare(values, AiFeature.Insights, "stats", cloud: true));
+        Assert.Equal((AiErrorKind.Consent, AiPermission.History), (error.Kind, error.Permission));
+        Assert.Equal(AiPermission.History, Assert.Throws<AiException>(() => Prepare(values, AiFeature.Insights, "stats", cloud: true)).Permission);
         var shared = Prepare(values, AiFeature.Insights, "stats", cloud: true, settings: new AiSettings { ShareHistory = true });
         Assert.Contains("watchlisted", shared.Prompt);
     }

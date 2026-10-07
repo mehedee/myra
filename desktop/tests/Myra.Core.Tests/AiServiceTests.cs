@@ -199,10 +199,14 @@ public class AiServiceTests
         Assert.Throws<AiException>(() => ai.SaveKey("bad\nkey"));
 
         var history = await ai.ExecuteAsync(Request(AiFeature.NaturalSearch, "unwatched dramas", [Title()]));
-        Assert.Equal(AiErrorKind.MissingContext, history.Error?.Kind);
+        Assert.Equal(AiErrorKind.Consent, history.Error?.Kind);
+        Assert.Equal(AiPermission.History, history.Error?.Permission);
         Assert.Contains("history sharing", history.Error!.Message);
+        Assert.Equal(0, provider.Calls);
+
+        var plain = await ai.ExecuteAsync(Request(AiFeature.NaturalSearch, "thoughtful dramas", [Title()]));
+        Assert.Equal(AiOutcomeStatus.Completed, plain.Status);
         Assert.Equal("fixture-key", provider.Requests[0].Key);
-        Assert.Equal(1, provider.Calls);
 
         ai.RemoveKey();
         Assert.False(ai.HasKey());
