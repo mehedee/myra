@@ -192,6 +192,7 @@ var work = Dispatcher.UIThread.InvokeAsync(async () =>
     }
 
     await ShellChecks.RunAsync(window, vm, services, root, output, data, Check, Pump);
+    await AiChecks.RunAsync(window, vm, services, output, Check, Pump);
 
     // Player rules that need no libVLC.
     var stall = new PlayerStallDetector();
