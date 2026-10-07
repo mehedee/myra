@@ -1,6 +1,6 @@
 # Myra.Core API for the desktop UI
 
-This document lists the core (non-UI) types that bring the Windows/Linux app to parity with macOS Myra 2.0.5.
+This document lists the core (non-UI) types that bring the Windows/Linux app to parity with macOS Myra 3.0.1 (except Apple on-device AI).
 All types are in the `Myra.Core` namespace. The UI owns windows, dialogs, notifications and threading.
 
 ## Rules for the UI layer
@@ -17,13 +17,16 @@ All types are in the `Myra.Core` namespace. The UI owns windows, dialogs, notifi
 |---|---|---|
 | Sources, downloads, settings | `%APPDATA%\Myra\Myra.json` | `~/.config/Myra/Myra.json` |
 | Index (schema v4) | `%APPDATA%\Myra\LibraryIndex.sqlite` | `~/.config/Myra/LibraryIndex.sqlite` |
-| Pre-migration index backup | `LibraryIndex.sqlite.v2-backup` (same folder) | same |
+| Pre-migration index backup | `LibraryIndex.sqlite.v3-backup` (`.v{N}-backup` for an older schema; the backup before it is kept as `.v{N}-backup.previous`) | same |
 | Saved Home snapshot | `LibraryIndex.sqlite.home-cache` | same |
 | Personal records (`PersonalLibraryPath`) | `%APPDATA%\Myra\EntertainmentPersonal.json` | `~/.config/Myra/EntertainmentPersonal.json` |
 | Folder schedules (`IndexPoliciesPath`) | `%APPDATA%\Myra\IndexPolicies.json` | `~/.config/Myra/IndexPolicies.json` |
 | Player preferences and markers | `%APPDATA%\Myra\PlayerPreferences.json` | `~/.config/Myra/PlayerPreferences.json` |
 | Secrets (`SecretsDirectory`) | `%APPDATA%\Myra\Secrets\*.dpapi` (DPAPI, CurrentUser) | `~/.config/Myra/Secrets/*.secret` (0600, folder 0700) |
 | Subtitle cache (`SubtitleCacheDirectory`) | `%LOCALAPPDATA%\Myra\Cache\Subtitles` | `~/.cache/Myra/Subtitles` |
+| Remembered subtitles per title | `title-cache.json` in the subtitle cache (at most 1000 titles, 20 files each) | same |
+| AI settings (`AiSettingsPath`), never keys | `%APPDATA%\Myra\MyraAI.json` | `~/.config/Myra/MyraAI.json` |
+| AI daily request count (`AiUsagePath`) | `%APPDATA%\Myra\MyraAIUsage.json` | `~/.config/Myra/MyraAIUsage.json` |
 
 `MYRA_DATA_DIR` overrides the data and cache folders (tests use it).
 
@@ -31,10 +34,10 @@ All types are in the `Myra.Core` namespace. The UI owns windows, dialogs, notifi
 
 ### `LibraryIndex`
 
-- `new LibraryIndex(path)` opens the index and migrates it in place to schema v4 in one transaction. An older index (v1 to v3) is first copied with the SQLite backup API to `{path}.v{N}-backup` (written to `.tmp`, verified with `quick_check` and `user_version`, then renamed). A newer schema throws `LibraryIndexException`. Do not delete the backup automatically.
-- Fuzzy Global search: `Search(query, limit = 500, offset = 0, fuzzy = true)`. Fuzzy mode tolerates typos and reordered words and ranks exact phrases first. `fuzzy: false` requires the whole normalized query as a substring. Both modes are deterministic, so pages never repeat or skip a result. The query must have 3 or more characters, else `GlobalSearchException(QueryTooShort)`.
-- Search documents live in `search_documents` with an FTS5 `unicode61` index of three-letter grams (`search_document_fts`). SQL triggers queue new and renamed videos in `search_dirty` and remove deleted ones. `BuildSearchDocuments()` indexes the queue in batches of 500. `Search` and `SaveSearchAliases` do it on demand, so call `BuildSearchDocuments()` from a background task after migration to avoid a first-search delay (about 4 s for 114,000 videos).
-- `SaveSearchAliases(titles)` adds the title name and the provider title to each version's document. `EntertainmentStore` calls it after every catalogue reload and every enrichment.
+- `new LibraryIndex(path)` opens the index and migrates it in place to schema v4 in one transaction. An older index (v1 to v3) is first copied with the SQLite backup API to `{path}.v{N}-backup` (written to `.tmp`, verified read-only with `quick_check` and `user_version`, then renamed). Every upgrade takes a fresh backup; an existing backup moves to `.v{N}-backup.previous`. Before the backup, the upgrade needs free space of twice the index plus its WAL; with less, it throws `LibraryIndexException` ("Not enough free disk space …") and changes nothing. A newer schema throws `LibraryIndexException`. Do not delete the backup automatically.
+- Fuzzy Global search: `Search(query, limit = 500, offset = 0, fuzzy = true, cancellationToken = default)`. The token stops a pending document build. Fuzzy mode tolerates typos and reordered words and ranks exact phrases first. `fuzzy: false` requires the whole normalized query as a substring. Both modes are deterministic, so pages never repeat or skip a result. The query must have 3 or more characters, else `GlobalSearchException(QueryTooShort)`.
+- Search documents live in `search_documents` with an FTS5 `unicode61` index of three-letter grams (`search_document_fts`). SQL triggers queue new and renamed videos in `search_dirty` and remove deleted ones. `BuildSearchDocuments()` indexes the queue in batches of 500 and releases the index lock between batches. `Search` and `SaveSearchAliases` do it on demand, so call `BuildSearchDocuments()` from a background task after migration to avoid a first-search delay (about 4 s for 114,000 videos).
+- `SaveSearchAliases(titles)` adds the title name and the provider title to each version's document. Queued documents are built once, with their aliases; later calls rebuild only documents whose alias text changed. `EntertainmentStore` calls it after every catalogue reload and every enrichment. First start after an upgrade, measured on a copy of a 113,840-video v3 index: upgrade 1.0 s, document build 4.6 s, index 222.6 MB (+74.1 MB WAL) to 342.6 MB plus a 222.6 MB backup.
 - `FuzzySearch` (static): `Normalize`, `MatchExpression` (at most 64 quoted grams), `IndexGrams`, `Score`, `EditDistance`.
 - `AppSettings.FuzzyGlobalSearch` (default true) stores the fuzzy/exact choice in `Myra.json`.
 - Existing members are unchanged: `Search`, `SynchronizeSources`, `NeedsRefresh`, `LastRefresh`, `VideoCount`, `Upsert`, `CachedMetadata`, `SaveMetadata`, `SavePlaybackPosition`, `PlaybackPosition`.
@@ -185,3 +188,13 @@ ShowToast(result.Message);
 - The imported download folder is only reported (`PreviousDownloadDirectory`). It is never applied.
 - Merge keeps local preferences (notifications), unions sets and keeps the newer history record.
 - `PersonalLibraryTransfer.Explanation` is the dialog text.
+
+## 8. Myra AI (`AiService`)
+
+- Providers: Disabled (default), OpenAI and Claude with the user's own API key. Apple on-device AI is macOS only. Nothing runs without an explicit request.
+- Cloud permissions are separate settings: `AiPermission.Cloud` (`CloudConsent`), `History` (`ShareHistory`), `Subtitles` (`ShareSubtitles`).
+- `MissingPermissions(request)` lists the permissions a request needs and the settings do not grant. History is needed for Viewing Insights, and for search-style features (`ExtractsIntent`) when the request mentions unwatched, unfinished or watchlist titles (`AiConsent.MayUseHistory`, one word list shared with `AiSearchIntent.Normalized`). The UI asks once per missing permission and sends nothing if the user declines.
+- `ExecuteAsync` checks the same permissions before it reads the key, uses the cache or counts a generation. It fails with `AiException { Kind = Consent, Permission = … }`. Retry logic switches on `Permission`, never on the message text.
+- Daily limit: features with an intent step use two generations. They start only when both fit in today's limit.
+- Plan Tonight: the user's time budget ("Available time: N minutes") wins. A budget from the model is used only when it is smaller.
+- Recap: `AiWorkspace.CompletedEpisodes` lists exactly the episodes that `ExecuteAsync` accepts (`AiWorkspace.IsCompletedEpisode`: season and episode number, and the title is watched or the file is within 10 s of its end).

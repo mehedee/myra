@@ -36,9 +36,14 @@ x86-64. Runs under X11, and under Wayland through XWayland.
 | `Myra.exe <url-or-file>` plays a video directly | New |
 | Home (shelves, filters, Pick Something), Details, Watchlist/Collections, followed shows | Ported |
 | OMDb/TMDB metadata, Correct Match, OpenSubtitles search, release versions and chooser | Ported |
-| Index Management (daily/weekly/manual schedules, staged refresh, full rescan), schema v3 index | Ported |
+| Index Management (daily/weekly/manual schedules, staged refresh, full rescan), schema 4 index | Ported |
+| Fuzzy Global search (typos and reordered words, exact mode, provider-title aliases) | Ported |
+| Myra AI: the 16 on-demand experiences, reviewed actions with undo, daily limit, separate cloud/history/subtitle permissions | Ported with OpenAI and Claude (your own API key); Disabled by default |
+| Apple on-device AI (Apple Intelligence) | Dropped (macOS only) |
+| Myra icon families and variants (Settings → Appearance) | Ported for window, taskbar and sidebar icons; the executable icon stays the same |
+| Free-first subtitles: files next to local media, remembered cache per title, manual file, OpenSubtitles.org web search | Ported |
 | Offline Library, Personal Library export/import (macOS-compatible JSON), playback preferences, intro/outro markers | Ported |
-| API keys | Stored with DPAPI on Windows (Keychain on macOS), 0600 file on Linux |
+| API keys (TMDB, OMDb, OpenSubtitles, OpenAI, Claude) | Stored with DPAPI on Windows (Keychain on macOS), 0600 file on Linux |
 | Followed-show notifications | In-app toast on Windows, `notify-send` on Linux |
 | "Play on Sam Online" (Apple Shortcuts) | Dropped (macOS only) |
 
@@ -58,8 +63,12 @@ build/             Windows and Linux packaging, Linux installer, packaged-app sm
 keeps an existing install as `<install-dir>.previous`, copies the new build in and starts it.
 On the first run it copies a former SamBD profile (`%APPDATA%\SamBD`) to `%APPDATA%\Myra` with
 `build/migrate-profile.py`; the SamBD profile and install are left unchanged for rollback.
-The first start migrates the index to schema v3 and keeps `LibraryIndex.sqlite.v2-backup`;
-older builds cannot open a v3 index, so restore that backup before rolling back.
+The first start migrates the index to schema 4 and keeps a fresh `LibraryIndex.sqlite.v3-backup`
+(an older backup of that name is kept as `.v3-backup.previous`). The upgrade needs free disk space of
+about twice the index (index plus `-wal`); with less, Myra shows an error and changes nothing.
+On a 113,840-video index the upgrade took about 1 s and the first search-document build about 5 s;
+the index grew from 223 MB (+74 MB WAL) to 343 MB, plus a 223 MB backup.
+Older builds cannot open a schema-4 index, so restore the v3 backup before rolling back.
 
 ## Build
 
@@ -77,19 +86,16 @@ On Windows: `powershell -ExecutionPolicy Bypass -File build\package-windows.ps1`
 ## Verification
 
 The `desktop-windows-linux` branch preserves this edition as a clean Myra snapshot;
-`master` contains the macOS edition. Shared version 3.0.1 does not imply feature parity:
-this edition matches the macOS 2.0.5 feature set (see Features). The macOS 3.0 additions —
-AI experiences, fuzzy Global search (schema 4), icon families and free-first subtitles — are not ported yet.
-Verification on 2026-10-07: all 63 .NET unit tests and five profile-migration tests
-passed using .NET 10.0.401 on macOS. The Avalonia app and headless checker compiled
-in Release mode with zero warnings. The checker passed source browsing, natural
-ordering, SQLite search/indexing, isolated profile persistence, and real aria2
-pause/restart/resume/content checks. Native Windows/Linux windows, installers and
-libVLC playback have not been reverified for this release on those operating
-systems.
+`master` contains the macOS edition. This edition matches macOS 3.0.1 (see Features), except
+Apple on-device AI and other macOS-only items ("Play on Sam Online", the Dock icon).
+AI is Disabled by default; OpenAI and Claude use your own API key and may incur charges.
+Verification on 2026-10-08 (Linux, .NET 10): Release build with zero warnings, all 266
+.NET unit tests, and all headless checker checks (157) passed. The checker covers source
+browsing, natural ordering, SQLite search/indexing, profile persistence, real aria2
+pause/restart/resume, real libVLC playback, the AI workspace with a fake cloud provider
+(consent before any request, no request after a declined permission), and the icon picker.
 
-
-- `tests/Myra.Core.Tests`: 63 unit tests ported from the Swift test suite, plus Windows filename rules.
+- `tests/Myra.Core.Tests`: unit tests ported from the Swift test suite, plus Windows filename rules, index upgrade and AI permission checks.
 - `tools/Myra.UiCheck`: starts the real app headlessly against `tests/e2e/listing_server.py`
   serving media from `tests/e2e/make_media.py`. It checks browsing, search and indexing, real aria2
   downloads (pause, resume across an aria2 restart, content match), and real libVLC playback
@@ -106,7 +112,10 @@ systems.
 | Player preferences | `%APPDATA%\Myra\PlayerPreferences.json` | `~/.config/Myra/PlayerPreferences.json` |
 | Personal library, folder schedules | `%APPDATA%\Myra\EntertainmentPersonal.json`, `IndexPolicies.json` | `~/.config/Myra/` |
 | API keys | `%APPDATA%\Myra\Secrets\` | `~/.config/Myra/Secrets/` |
+| AI settings (provider, model, permissions, limits; never API keys) | `%APPDATA%\Myra\MyraAI.json` | `~/.config/Myra/MyraAI.json` |
+| AI requests counted today | `%APPDATA%\Myra\MyraAIUsage.json` | `~/.config/Myra/MyraAIUsage.json` |
 | Subtitle cache | `%LOCALAPPDATA%\Myra\Cache\Subtitles` | `~/.cache/Myra/Subtitles` |
+| Remembered subtitles per title | `title-cache.json` in the subtitle cache | same |
 | Downloads (default) | `Downloads\Myra` | `~/Downloads/Myra` |
 
 ## Upgrade an existing desktop profile
