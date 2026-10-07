@@ -91,12 +91,13 @@ public sealed class FileSecretStore : ISecretStore
             {
                 if (string.IsNullOrWhiteSpace(value))
                 {
-                    File.Delete(path);
+                    // File.Delete throws when the folder itself is missing; nothing to delete then.
+                    if (File.Exists(path)) File.Delete(path);
                     return;
                 }
                 CreatePrivateDirectory(_directory);
                 var temporary = path + ".tmp";
-                File.Delete(temporary);
+                if (File.Exists(temporary)) File.Delete(temporary);
                 var options = new FileStreamOptions { Mode = FileMode.CreateNew, Access = FileAccess.Write };
                 if (!OperatingSystem.IsWindows()) options.UnixCreateMode = UnixFileMode.UserRead | UnixFileMode.UserWrite;
                 using (var stream = new FileStream(temporary, options))
@@ -162,7 +163,8 @@ public sealed class DpapiSecretStore : ISecretStore
             {
                 if (string.IsNullOrWhiteSpace(value))
                 {
-                    File.Delete(path);
+                    // File.Delete throws when the folder itself is missing; nothing to delete then.
+                    if (File.Exists(path)) File.Delete(path);
                     return;
                 }
                 Directory.CreateDirectory(_directory);

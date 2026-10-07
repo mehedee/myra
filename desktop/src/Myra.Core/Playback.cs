@@ -260,17 +260,40 @@ public sealed class PlayerPersonalState
     /// Marker ranges keyed by PlayerMarkers.EpisodeKey (one file identity) or SeriesKey ("series|…").
     public Dictionary<string, PlayerSkipMarkers> Markers { get; set; } = [];
 
+    /// A missing file gives defaults. An unreadable or corrupt file is renamed to
+    /// "{name}.corrupt-{timestamp}" first, so the next save cannot overwrite its skip markers.
     public static PlayerPersonalState Load(string? path = null)
     {
+        var file = path ?? AppPaths.PlayerStatePath;
         try
         {
-            var state = JsonSerializer.Deserialize<PlayerPersonalState>(File.ReadAllText(path ?? AppPaths.PlayerStatePath)) ?? new();
+            if (!File.Exists(file)) return new();
+            var state = JsonSerializer.Deserialize<PlayerPersonalState>(File.ReadAllText(file)) ?? throw new JsonException("Empty player preferences.");
             state.Markers ??= [];
+            state.AudioLanguage ??= "en";
+            state.SubtitleLanguage ??= "en";
+            if (state.Markers.Keys.Any(k => k is null)) throw new JsonException("Invalid marker key.");
             return state;
         }
         catch (Exception)
         {
+            PreserveCorrupt(file);
             return new();
+        }
+    }
+
+    internal static void PreserveCorrupt(string file)
+    {
+        try
+        {
+            if (!File.Exists(file)) return;
+            var aside = file + $".corrupt-{DateTime.Now:yyyyMMdd-HHmmss}";
+            for (var i = 1; File.Exists(aside); i++) aside = file + $".corrupt-{DateTime.Now:yyyyMMdd-HHmmss}-{i}";
+            File.Move(file, aside);
+        }
+        catch (Exception)
+        {
+            // If it cannot be moved, the original stays; saving may then replace it.
         }
     }
 
