@@ -17,6 +17,9 @@
       <MenuItem Header="Index Management…" Command="{Binding OpenIndexManagementCommand}" />
       <MenuItem Header="Refresh due folders" Command="{Binding RefreshIndexNowCommand}" />
       <Separator />
+      <MenuItem Header="Myra AI…" Command="{Binding OpenAiCommand}" CommandParameter="{x:Static core:AiFeature.SmartPick}" />
+      <MenuItem Header="AI Settings…" Command="{Binding OpenAiSettingsCommand}" />
+      <Separator />
       <MenuItem Header="Personal Library: Export / Import…" Command="{Binding OpenPersonalLibraryCommand}" />
       <MenuItem Header="Manage collections…" Command="{Binding ManageCollectionsCommand}" />
       <MenuItem Header="Open download folder" Command="{Binding OpenDownloadFolderCommand}" />

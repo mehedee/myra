@@ -18,6 +18,7 @@ public partial class DetailWindow : Window
         DataContext = details;
         details.PlayRequested += title => Close(title);
         details.CloseRequested += () => Close(null);
+        details.AiRequested += _ => Close(null);
         KeyDown += (_, e) =>
         {
             if (e.Key != Key.Escape) return;

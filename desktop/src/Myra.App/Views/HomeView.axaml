@@ -2,6 +2,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:Myra.App.ViewModels"
              xmlns:views="using:Myra.App.Views"
+             xmlns:core="using:Myra.Core"
              x:Class="Myra.App.Views.HomeView"
              x:DataType="vm:HomeViewModel">
   <!-- Home (macOS HomeView): search and actions, a scrollable filter row, then the shelves. -->
@@ -26,6 +27,21 @@
               <StackPanel Orientation="Horizontal" Spacing="6">
                 <PathIcon Data="{StaticResource IconDice}" Width="14" Height="14" />
                 <TextBlock Text="Pick something" x:Name="PickLabel" />
+              </StackPanel>
+            </Button>
+            <Button ToolTip.Tip="Myra AI: suggestions, questions and plans from your library" x:Name="AiButton">
+              <Button.Flyout>
+                <MenuFlyout>
+                  <MenuItem Header="Help Me Choose" Command="{Binding OpenAiCommand}" CommandParameter="{x:Static core:AiFeature.SmartPick}" />
+                  <MenuItem Header="Library Assistant" Command="{Binding OpenAiCommand}" CommandParameter="{x:Static core:AiFeature.Assistant}" />
+                  <MenuItem Header="Search in Natural Language" Command="{Binding OpenAiCommand}" CommandParameter="{x:Static core:AiFeature.NaturalSearch}" />
+                  <MenuItem Header="Plan Tonight" Command="{Binding OpenAiCommand}" CommandParameter="{x:Static core:AiFeature.Plan}" />
+                  <MenuItem Header="Viewing Insights" Command="{Binding OpenAiCommand}" CommandParameter="{x:Static core:AiFeature.Insights}" />
+                </MenuFlyout>
+              </Button.Flyout>
+              <StackPanel Orientation="Horizontal" Spacing="6">
+                <PathIcon Data="{StaticResource IconSparkles}" Width="14" Height="14" />
+                <TextBlock Text="Myra AI" x:Name="AiLabel" />
               </StackPanel>
             </Button>
             <Button Command="{Binding UpdateMetadataCommand}" IsEnabled="{Binding HasCatalogue}" ToolTip.Tip="Update metadata">
