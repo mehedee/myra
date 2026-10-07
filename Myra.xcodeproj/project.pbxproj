@@ -1,0 +1,490 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {};
+	objectVersion = 60;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		A00100000000000000000019 = {isa = PBXBuildFile; fileRef = B00100000000000000000019; };
+		A00100000000000000000020 = {isa = PBXBuildFile; fileRef = B00100000000000000000020; };
+		A00100000000000000000021 = {isa = PBXBuildFile; fileRef = B00100000000000000000021; };
+		A00100000000000000000022 = {isa = PBXBuildFile; fileRef = B00100000000000000000022; };
+		A00100000000000000000023 = {isa = PBXBuildFile; fileRef = B00100000000000000000023; };
+		A00200000000000000000006 = {isa = PBXBuildFile; fileRef = B00200000000000000000006; };
+		A00100000000000000000018 = {isa = PBXBuildFile; fileRef = B00100000000000000000018; };
+		A00100000000000000000010 = {isa = PBXBuildFile; fileRef = B00100000000000000000010; };
+		A00100000000000000000011 = {isa = PBXBuildFile; fileRef = B00100000000000000000011; };
+		A00100000000000000000012 = {isa = PBXBuildFile; fileRef = B00100000000000000000012; };
+		A00100000000000000000013 = {isa = PBXBuildFile; fileRef = B00100000000000000000013; };
+		A00100000000000000000014 = {isa = PBXBuildFile; fileRef = B00100000000000000000014; };
+		A00100000000000000000015 = {isa = PBXBuildFile; fileRef = B00100000000000000000015; };
+		A00100000000000000000016 = {isa = PBXBuildFile; fileRef = B00100000000000000000016; };
+		A00100000000000000000017 = {isa = PBXBuildFile; fileRef = B00100000000000000000016; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy,); }; };
+		A00200000000000000000003 = {isa = PBXBuildFile; fileRef = B00200000000000000000003; };
+		A00200000000000000000004 = {isa = PBXBuildFile; fileRef = B00200000000000000000004; };
+		A00200000000000000000005 = {isa = PBXBuildFile; fileRef = B00100000000000000000016; };
+		A00100000000000000000001 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00100000000000000000001 /* Models.swift */; };
+		A00100000000000000000002 /* DirectoryService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00100000000000000000002 /* DirectoryService.swift */; };
+		A00100000000000000000003 /* DownloadPlanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00100000000000000000003 /* DownloadPlanner.swift */; };
+		A00100000000000000000004 /* Aria2Service.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00100000000000000000004 /* Aria2Service.swift */; };
+		A00100000000000000000005 /* AppCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00100000000000000000005 /* AppCoordinator.swift */; };
+		A00100000000000000000006 /* MyraApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00100000000000000000006 /* MyraApp.swift */; };
+		A00100000000000000000007 /* Views.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00100000000000000000007 /* Views.swift */; };
+		A00100000000000000000008 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = B00100000000000000000008 /* Assets.xcassets */; };
+		A00100000000000000000009 /* SwiftSoup in Frameworks */ = {isa = PBXBuildFile; productRef = D00100000000000000000002 /* SwiftSoup */; };
+		A00200000000000000000001 /* DirectoryServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00200000000000000000001 /* DirectoryServiceTests.swift */; };
+		A00200000000000000000002 /* DownloadAndAria2Tests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00200000000000000000002 /* DownloadAndAria2Tests.swift */; };
+		6B8976A2684B76B4B42AA9CA /* DiscoveryService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8304AEE5B15C536B5389BCD8; };
+		17BBBF8FBE262C8492234DA2 /* DiscoverySettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C49C204ADA10F4D326F77F69; };
+		B0B696BCDA2A1CB173C92A96 /* EntertainmentDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4FDE9A6EB4BD4830582D1ABC; };
+		81F79CA8D2E19EBF8C75F992 /* EntertainmentIntegration.swift in Sources */ = {isa = PBXBuildFile; fileRef = 422B6F59CC591644335581FB; };
+		4AEF1E882DDF61BEE2546AC6 /* EntertainmentModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1D89C355BBFC2EE5E735859; };
+		D25392F5A03EA41AD3C25825 /* EntertainmentPersonalViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 416E4F3AE4A617DE1CEB2E24; };
+		79E198B204C46D2311767262 /* EntertainmentStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 87CE69E9B0269ABFBDEBC9B1; };
+		BD8D4B414CF4A85EAA3A501A /* HomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EFC4EF010EF0CFCB13C3872F; };
+		91E416B238BEFC35503640E9 /* OfflineLibraryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5F9FDD28AD8592352C0005E0; };
+		2D8552835BD8D47A1CE9D6C5 /* PlaybackChoicesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 16CFF6D49AB1FD24F0234431; };
+		91FD4CA08E885B181F953318 /* PlayerPersonalState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 28D79205776DF5436C5514AE; };
+		3DA07C13F59E1C0DAAD89C1F /* PlayerPersonalViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = EA11B2AA4467ED299CFB615F; };
+		DF40E20F2EC764D71FE531AE /* DiscoveryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 687A9446C2E9B6E8F637941A; };
+		431953C248E5D9A304398B3E /* PlayerV2Tests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0D1EE3EDADD4B1FE3E7CEA02; };
+		F20000000000000000000002 = {isa = PBXBuildFile; fileRef = F20000000000000000000001; };
+		8E77B861CEB69F248A9495D6 = {isa = PBXBuildFile; fileRef = D91ED2837EF8F9EC87BC8845; };
+		F32000000000000000000001 = {isa = PBXBuildFile; fileRef = F31000000000000000000001; };
+		F32000000000000000000002 = {isa = PBXBuildFile; fileRef = F31000000000000000000002; };
+		F42000000000000000000001 = {isa = PBXBuildFile; fileRef = F41000000000000000000001; };
+		F42000000000000000000002 = {isa = PBXBuildFile; fileRef = F41000000000000000000002; };
+		F42000000000000000000003 = {isa = PBXBuildFile; fileRef = F41000000000000000000003; };
+		F42000000000000000000004 = {isa = PBXBuildFile; fileRef = F41000000000000000000004; };
+		F42000000000000000000005 = {isa = PBXBuildFile; fileRef = F41000000000000000000005; };
+		F42000000000000000000006 = {isa = PBXBuildFile; fileRef = F41000000000000000000006; };
+		F42000000000000000000007 = {isa = PBXBuildFile; fileRef = F41000000000000000000007; };
+		F42000000000000000000008 = {isa = PBXBuildFile; fileRef = F41000000000000000000008; };
+		F44000000000000000000001 = {isa = PBXBuildFile; fileRef = F43000000000000000000001; };
+		F44000000000000000000002 = {isa = PBXBuildFile; fileRef = F43000000000000000000002; };
+		F42000000000000000000009 = {isa = PBXBuildFile; fileRef = F41000000000000000000009; };
+		F42000000000000000000010 = {isa = PBXBuildFile; fileRef = F41000000000000000000010; };
+		F42000000000000000000011 = {isa = PBXBuildFile; fileRef = F41000000000000000000011; };
+		F42000000000000000000012 = {isa = PBXBuildFile; fileRef = F41000000000000000000012; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		C90000000000000000000001 = {
+			isa = PBXContainerItemProxy;
+			containerPortal = C00100000000000000000001 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = C00200000000000000000001;
+			remoteInfo = Myra;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXFileReference section */
+		B00100000000000000000019 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaybackSequence.swift; sourceTree = "<group>"; };
+		B00100000000000000000020 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayerWindowAttachment.swift; sourceTree = "<group>"; };
+		B00100000000000000000021 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayerOptionsMenus.swift; sourceTree = "<group>"; };
+		B00100000000000000000022 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnlineSubtitles.swift; sourceTree = "<group>"; };
+		B00100000000000000000023 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnlineSubtitleViews.swift; sourceTree = "<group>"; };
+		B00200000000000000000006 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayerWorkflowTests.swift; sourceTree = "<group>"; };
+		B00100000000000000000018 = {isa = PBXFileReference; lastKnownFileType = image.icns; path = Sources/Myra/Resources/VLC.icns; sourceTree = SOURCE_ROOT; };
+		B00100000000000000000010 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryIndex.swift; sourceTree = "<group>"; };
+		B00100000000000000000011 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryController.swift; sourceTree = "<group>"; };
+		B00100000000000000000012 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaMetadata.swift; sourceTree = "<group>"; };
+		B00100000000000000000013 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaInspectorView.swift; sourceTree = "<group>"; };
+		B00100000000000000000014 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmbeddedPlayer.swift; sourceTree = "<group>"; };
+		B00100000000000000000015 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmbeddedPlayerView.swift; sourceTree = "<group>"; };
+		B00100000000000000000016 = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; path = Vendor/VLCKit.xcframework; sourceTree = SOURCE_ROOT; };
+		B00200000000000000000003 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryIndexTests.swift; sourceTree = "<group>"; };
+		B00200000000000000000004 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaPlaybackTests.swift; sourceTree = "<group>"; };
+		B00100000000000000000001 /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
+		B00100000000000000000002 /* DirectoryService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DirectoryService.swift; sourceTree = "<group>"; };
+		B00100000000000000000003 /* DownloadPlanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DownloadPlanner.swift; sourceTree = "<group>"; };
+		B00100000000000000000004 /* Aria2Service.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Aria2Service.swift; sourceTree = "<group>"; };
+		B00100000000000000000005 /* AppCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppCoordinator.swift; sourceTree = "<group>"; };
+		B00100000000000000000006 /* MyraApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MyraApp.swift; sourceTree = "<group>"; };
+		B00100000000000000000007 /* Views.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Views.swift; sourceTree = "<group>"; };
+		B00100000000000000000008 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		B00200000000000000000001 /* DirectoryServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DirectoryServiceTests.swift; sourceTree = "<group>"; };
+		B00200000000000000000002 /* DownloadAndAria2Tests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DownloadAndAria2Tests.swift; sourceTree = "<group>"; };
+		B00300000000000000000001 /* Myra.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Myra.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		B00300000000000000000002 /* MyraTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = MyraTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		B00400000000000000000001 /* Package.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Package.swift; sourceTree = "<group>"; };
+		B00400000000000000000002 /* README.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = README.md; sourceTree = "<group>"; };
+		8304AEE5B15C536B5389BCD8 /* DiscoveryService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiscoveryService.swift; sourceTree = "<group>"; };
+		C49C204ADA10F4D326F77F69 /* DiscoverySettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiscoverySettingsView.swift; sourceTree = "<group>"; };
+		4FDE9A6EB4BD4830582D1ABC /* EntertainmentDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EntertainmentDetailView.swift; sourceTree = "<group>"; };
+		422B6F59CC591644335581FB /* EntertainmentIntegration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EntertainmentIntegration.swift; sourceTree = "<group>"; };
+		A1D89C355BBFC2EE5E735859 /* EntertainmentModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EntertainmentModels.swift; sourceTree = "<group>"; };
+		416E4F3AE4A617DE1CEB2E24 /* EntertainmentPersonalViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EntertainmentPersonalViews.swift; sourceTree = "<group>"; };
+		87CE69E9B0269ABFBDEBC9B1 /* EntertainmentStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EntertainmentStore.swift; sourceTree = "<group>"; };
+		EFC4EF010EF0CFCB13C3872F /* HomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeView.swift; sourceTree = "<group>"; };
+		5F9FDD28AD8592352C0005E0 /* OfflineLibraryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OfflineLibraryView.swift; sourceTree = "<group>"; };
+		16CFF6D49AB1FD24F0234431 /* PlaybackChoicesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaybackChoicesView.swift; sourceTree = "<group>"; };
+		28D79205776DF5436C5514AE /* PlayerPersonalState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayerPersonalState.swift; sourceTree = "<group>"; };
+		EA11B2AA4467ED299CFB615F /* PlayerPersonalViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayerPersonalViews.swift; sourceTree = "<group>"; };
+		687A9446C2E9B6E8F637941A /* DiscoveryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiscoveryTests.swift; sourceTree = "<group>"; };
+		0D1EE3EDADD4B1FE3E7CEA02 /* PlayerV2Tests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayerV2Tests.swift; sourceTree = "<group>"; };
+		F20000000000000000000001 = {isa = PBXFileReference; lastKnownFileType = image.png; path = Sources/Myra/Resources/TMDB.png; sourceTree = SOURCE_ROOT; };
+		D91ED2837EF8F9EC87BC8845 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EntertainmentUISnapshotTests.swift; sourceTree = "<group>"; };
+		F31000000000000000000001 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IndexRefresh.swift; sourceTree = "<group>"; };
+		F31000000000000000000002 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IndexManagementView.swift; sourceTree = "<group>"; };
+		F41000000000000000000001 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MyraAIModels.swift; sourceTree = "<group>"; };
+		F41000000000000000000002 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MyraAIProviders.swift; sourceTree = "<group>"; };
+		F41000000000000000000003 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MyraAIStore.swift; sourceTree = "<group>"; };
+		F41000000000000000000004 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MyraAIViews.swift; sourceTree = "<group>"; };
+		F41000000000000000000005 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MyraAppearance.swift; sourceTree = "<group>"; };
+		F41000000000000000000006 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FuzzySearch.swift; sourceTree = "<group>"; };
+		F41000000000000000000007 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MyraAppearanceTests.swift; sourceTree = "<group>"; };
+		F41000000000000000000008 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FuzzySearchTests.swift; sourceTree = "<group>"; };
+		F43000000000000000000001 = {isa = PBXFileReference; lastKnownFileType = folder.icon; path = Resources/MyraIcons/signature.icon; sourceTree = SOURCE_ROOT; };
+		F43000000000000000000002 = {isa = PBXFileReference; lastKnownFileType = folder; path = Sources/Myra/Resources/MyraIcons; sourceTree = SOURCE_ROOT; };
+		F41000000000000000000009 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MyraAIUITests.swift; sourceTree = "<group>"; };
+		F41000000000000000000010 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MyraAITests.swift; sourceTree = "<group>"; };
+		F41000000000000000000011 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MyraAIProviderTests.swift; sourceTree = "<group>"; };
+		F41000000000000000000012 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MyraAIActionTests.swift; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		E00100000000000000000004 = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 10;
+			files = (A00100000000000000000017,);
+			name = "Embed Frameworks";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		E00100000000000000000002 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (A00100000000000000000009 /* SwiftSoup in Frameworks */, A00100000000000000000016,);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		E00200000000000000000002 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (A00200000000000000000005,);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		C01000000000000000000001 = {
+			isa = PBXGroup;
+			children = (
+				C01000000000000000000002 /* Myra */,
+				C01000000000000000000003 /* Resources */,
+				C01000000000000000000004 /* MyraTests */,
+				B00400000000000000000001 /* Package.swift */,
+				B00400000000000000000002 /* README.md */,
+				C01000000000000000000005 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		C01000000000000000000002 /* Myra */ = {
+			isa = PBXGroup;
+			children = (
+				F41000000000000000000001,
+				F41000000000000000000002,
+				F41000000000000000000003,
+				F41000000000000000000004,
+				F41000000000000000000005,
+				F41000000000000000000006,
+				F31000000000000000000002,
+				F31000000000000000000001,
+				B00100000000000000000005,
+				B00100000000000000000004,
+				B00100000000000000000002,
+				8304AEE5B15C536B5389BCD8,
+				C49C204ADA10F4D326F77F69,
+				B00100000000000000000003,
+				B00100000000000000000014,
+				B00100000000000000000015,
+				4FDE9A6EB4BD4830582D1ABC,
+				422B6F59CC591644335581FB,
+				A1D89C355BBFC2EE5E735859,
+				416E4F3AE4A617DE1CEB2E24,
+				87CE69E9B0269ABFBDEBC9B1,
+				EFC4EF010EF0CFCB13C3872F,
+				B00100000000000000000011,
+				B00100000000000000000010,
+				B00100000000000000000013,
+				B00100000000000000000012,
+				B00100000000000000000001,
+				5F9FDD28AD8592352C0005E0,
+				B00100000000000000000023,
+				B00100000000000000000022,
+				16CFF6D49AB1FD24F0234431,
+				B00100000000000000000019,
+				B00100000000000000000021,
+				28D79205776DF5436C5514AE,
+				EA11B2AA4467ED299CFB615F,
+				B00100000000000000000020,
+				B00100000000000000000006,
+				B00100000000000000000007,
+				B00100000000000000000016,
+			);
+			path = Sources/Myra;
+			sourceTree = "<group>";
+		};
+		C01000000000000000000003 /* Resources */ = {
+			isa = PBXGroup;
+			children = (B00100000000000000000008 /* Assets.xcassets */, B00100000000000000000018,);
+			path = Resources;
+			sourceTree = "<group>";
+		};
+		C01000000000000000000004 /* MyraTests */ = {
+			isa = PBXGroup;
+			children = (
+				B00200000000000000000001,
+				F41000000000000000000012,
+				F41000000000000000000011,
+				F41000000000000000000008,
+				F41000000000000000000007,
+				F41000000000000000000010,
+				F41000000000000000000009,
+				687A9446C2E9B6E8F637941A,
+				B00200000000000000000002,
+				D91ED2837EF8F9EC87BC8845,
+				B00200000000000000000003,
+				B00200000000000000000004,
+				0D1EE3EDADD4B1FE3E7CEA02,
+				B00200000000000000000006,
+			);
+			path = Tests/MyraTests;
+			sourceTree = "<group>";
+		};
+		C01000000000000000000005 /* Products */ = {
+			isa = PBXGroup;
+			children = (B00300000000000000000001 /* Myra.app */, B00300000000000000000002 /* MyraTests.xctest */,);
+			name = Products;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		C00200000000000000000001 /* Myra */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = G00100000000000000000001 /* Build configuration list for PBXNativeTarget "Myra" */;
+			buildPhases = (E00100000000000000000001 /* Sources */, E00100000000000000000002 /* Frameworks */, E00100000000000000000003 /* Resources */, E00100000000000000000004,);
+			buildRules = ();
+			dependencies = ();
+			name = Myra;
+			packageProductDependencies = (D00100000000000000000002 /* SwiftSoup */,);
+			productName = Myra;
+			productReference = B00300000000000000000001 /* Myra.app */;
+			productType = "com.apple.product-type.application";
+		};
+		C00200000000000000000002 /* MyraTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = G00200000000000000000001 /* Build configuration list for PBXNativeTarget "MyraTests" */;
+			buildPhases = (E00200000000000000000001 /* Sources */, E00200000000000000000002 /* Frameworks */, E00200000000000000000003 /* Resources */,);
+			buildRules = ();
+			dependencies = (C90000000000000000000002 /* PBXTargetDependency */,);
+			name = MyraTests;
+			productName = MyraTests;
+			productReference = B00300000000000000000002 /* MyraTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		C00100000000000000000001 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 2660;
+				LastUpgradeCheck = 2660;
+				TargetAttributes = {
+					C00200000000000000000001 = {CreatedOnToolsVersion = 26.0; };
+					C00200000000000000000002 = {CreatedOnToolsVersion = 26.0; TestTargetID = C00200000000000000000001; };
+				};
+			};
+			buildConfigurationList = G00000000000000000000001 /* Build configuration list for PBXProject "Myra" */;
+			compatibilityVersion = "Xcode 15.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (en, Base,);
+			mainGroup = C01000000000000000000001;
+			packageReferences = (D00100000000000000000001 /* XCRemoteSwiftPackageReference "SwiftSoup" */,);
+			productRefGroup = C01000000000000000000005 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (C00200000000000000000001 /* Myra */, C00200000000000000000002 /* MyraTests */,);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		E00100000000000000000003 /* Resources */ = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (
+F44000000000000000000001, F44000000000000000000002,
+				A00100000000000000000008,
+				A00100000000000000000018,
+				F20000000000000000000002,
+			); runOnlyForDeploymentPostprocessing = 0; };
+		E00200000000000000000003 /* Resources */ = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		E00100000000000000000001 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				F42000000000000000000001,
+				F42000000000000000000002,
+				F42000000000000000000003,
+				F42000000000000000000004,
+				F42000000000000000000005,
+				F42000000000000000000006,
+				F32000000000000000000002,
+				F32000000000000000000001,
+				A00100000000000000000005,
+				A00100000000000000000004,
+				A00100000000000000000002,
+				6B8976A2684B76B4B42AA9CA,
+				17BBBF8FBE262C8492234DA2,
+				A00100000000000000000003,
+				A00100000000000000000014,
+				A00100000000000000000015,
+				B0B696BCDA2A1CB173C92A96,
+				81F79CA8D2E19EBF8C75F992,
+				4AEF1E882DDF61BEE2546AC6,
+				D25392F5A03EA41AD3C25825,
+				79E198B204C46D2311767262,
+				BD8D4B414CF4A85EAA3A501A,
+				A00100000000000000000011,
+				A00100000000000000000010,
+				A00100000000000000000013,
+				A00100000000000000000012,
+				A00100000000000000000001,
+				91E416B238BEFC35503640E9,
+				A00100000000000000000023,
+				A00100000000000000000022,
+				2D8552835BD8D47A1CE9D6C5,
+				A00100000000000000000019,
+				A00100000000000000000021,
+				91FD4CA08E885B181F953318,
+				3DA07C13F59E1C0DAAD89C1F,
+				A00100000000000000000020,
+				A00100000000000000000006,
+				A00100000000000000000007,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		E00200000000000000000001 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				F42000000000000000000007,
+				F42000000000000000000008,
+				F42000000000000000000012,
+				F42000000000000000000011,
+				F42000000000000000000010,
+				F42000000000000000000009,
+				A00200000000000000000001,
+				DF40E20F2EC764D71FE531AE,
+				A00200000000000000000002,
+				8E77B861CEB69F248A9495D6,
+				A00200000000000000000003,
+				A00200000000000000000004,
+				431953C248E5D9A304398B3E,
+				A00200000000000000000006,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		C90000000000000000000002 /* PBXTargetDependency */ = {isa = PBXTargetDependency; target = C00200000000000000000001 /* Myra */; targetProxy = C90000000000000000000001; };
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		F00000000000000000000001 /* Debug */ = {isa = XCBuildConfiguration; buildSettings = {ARCHS = arm64; CLANG_ENABLE_MODULES = YES; MACOSX_DEPLOYMENT_TARGET = 14.0; ONLY_ACTIVE_ARCH = YES; SDKROOT = macosx; SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)"; SWIFT_OPTIMIZATION_LEVEL = "-Onone"; }; name = Debug; };
+		F00000000000000000000002 /* Release */ = {isa = XCBuildConfiguration; buildSettings = {ARCHS = arm64; CLANG_ENABLE_MODULES = YES; MACOSX_DEPLOYMENT_TARGET = 14.0; ONLY_ACTIVE_ARCH = YES; SDKROOT = macosx; SWIFT_COMPILATION_MODE = wholemodule; SWIFT_OPTIMIZATION_LEVEL = "-O"; }; name = Release; };
+		F00100000000000000000001 /* Debug */ = {isa = XCBuildConfiguration; buildSettings = {
+			ASSETCATALOG_COMPILER_APPICON_NAME = signature;
+			ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+			CODE_SIGNING_ALLOWED = NO;
+			CURRENT_PROJECT_VERSION = 9;
+			ENABLE_APP_SANDBOX = NO;
+			ENABLE_TESTABILITY = YES;
+			SWIFT_INCLUDE_PATHS = "$(SRCROOT)/Sources/CSQLite";
+			OTHER_LDFLAGS = "$(inherited) -lsqlite3";
+			GENERATE_INFOPLIST_FILE = YES;
+			INFOPLIST_KEY_CFBundleDisplayName = Myra;
+			INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
+			LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/../Frameworks";
+			MARKETING_VERSION = 3.0.1;
+			PRODUCT_BUNDLE_IDENTIFIER = com.mehedee.Myra;
+			PRODUCT_MODULE_NAME = Myra;
+			PRODUCT_NAME = Myra;
+			SWIFT_EMIT_LOC_STRINGS = YES;
+			SWIFT_VERSION = 6.0;
+		}; name = Debug; };
+		F00100000000000000000002 /* Release */ = {isa = XCBuildConfiguration; buildSettings = {
+			ASSETCATALOG_COMPILER_APPICON_NAME = signature;
+			ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+			CODE_SIGNING_ALLOWED = NO;
+			CURRENT_PROJECT_VERSION = 9;
+			ENABLE_APP_SANDBOX = NO;
+			SWIFT_INCLUDE_PATHS = "$(SRCROOT)/Sources/CSQLite";
+			OTHER_LDFLAGS = "$(inherited) -lsqlite3";
+			GENERATE_INFOPLIST_FILE = YES;
+			INFOPLIST_KEY_CFBundleDisplayName = Myra;
+			INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
+			LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/../Frameworks";
+			MARKETING_VERSION = 3.0.1;
+			PRODUCT_BUNDLE_IDENTIFIER = com.mehedee.Myra;
+			PRODUCT_MODULE_NAME = Myra;
+			PRODUCT_NAME = Myra;
+			SWIFT_EMIT_LOC_STRINGS = YES;
+			SWIFT_VERSION = 6.0;
+		}; name = Release; };
+		F00200000000000000000001 /* Debug */ = {isa = XCBuildConfiguration; buildSettings = {
+			BUNDLE_LOADER = "$(TEST_HOST)";
+			OTHER_LDFLAGS = "$(inherited) -lsqlite3";
+			SWIFT_INCLUDE_PATHS = "$(SRCROOT)/Sources/CSQLite";
+			CODE_SIGNING_ALLOWED = NO;
+			GENERATE_INFOPLIST_FILE = YES;
+			MACOSX_DEPLOYMENT_TARGET = 14.0;
+			PRODUCT_BUNDLE_IDENTIFIER = com.mehedee.MyraTests;
+			PRODUCT_NAME = "$(TARGET_NAME)";
+			SWIFT_VERSION = 6.0;
+			TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Myra.app/Contents/MacOS/Myra";
+		}; name = Debug; };
+		F00200000000000000000002 /* Release */ = {isa = XCBuildConfiguration; buildSettings = {
+			BUNDLE_LOADER = "$(TEST_HOST)";
+			OTHER_LDFLAGS = "$(inherited) -lsqlite3";
+			SWIFT_INCLUDE_PATHS = "$(SRCROOT)/Sources/CSQLite";
+			CODE_SIGNING_ALLOWED = NO;
+			GENERATE_INFOPLIST_FILE = YES;
+			MACOSX_DEPLOYMENT_TARGET = 14.0;
+			PRODUCT_BUNDLE_IDENTIFIER = com.mehedee.MyraTests;
+			PRODUCT_NAME = "$(TARGET_NAME)";
+			SWIFT_VERSION = 6.0;
+			TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Myra.app/Contents/MacOS/Myra";
+		}; name = Release; };
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		G00000000000000000000001 /* Build configuration list for PBXProject "Myra" */ = {isa = XCConfigurationList; buildConfigurations = (F00000000000000000000001 /* Debug */, F00000000000000000000002 /* Release */,); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
+		G00100000000000000000001 /* Build configuration list for PBXNativeTarget "Myra" */ = {isa = XCConfigurationList; buildConfigurations = (F00100000000000000000001 /* Debug */, F00100000000000000000002 /* Release */,); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
+		G00200000000000000000001 /* Build configuration list for PBXNativeTarget "MyraTests" */ = {isa = XCConfigurationList; buildConfigurations = (F00200000000000000000001 /* Debug */, F00200000000000000000002 /* Release */,); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
+/* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		D00100000000000000000001 /* XCRemoteSwiftPackageReference "SwiftSoup" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/scinfu/SwiftSoup.git";
+			requirement = {kind = upToNextMajorVersion; minimumVersion = 2.9.6; };
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		D00100000000000000000002 /* SwiftSoup */ = {isa = XCSwiftPackageProductDependency; package = D00100000000000000000001 /* XCRemoteSwiftPackageReference "SwiftSoup" */; productName = SwiftSoup; };
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = C00100000000000000000001 /* Project object */;
+}
