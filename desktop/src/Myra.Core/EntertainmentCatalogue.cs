@@ -337,9 +337,12 @@ public static class HomeProjection
         && (!filter.HideWatched || !personal.Watched.Contains(title.Id));
 
     /// The Home rows in macOS order. New Episodes appears only when followed shows have new episodes.
+    /// episodeId may supply cached FollowedEpisodes.EpisodeId values (parsing every file name is costly).
     public static List<HomeShelf> Shelves(
-        HomeCatalogueProjection projection, EntertainmentPersonalData personal, IReadOnlySet<string> newEpisodeIds)
+        HomeCatalogueProjection projection, EntertainmentPersonalData personal, IReadOnlySet<string> newEpisodeIds,
+        Func<EntertainmentVersion, string>? episodeId = null)
     {
+        episodeId ??= FollowedEpisodes.EpisodeId;
         var shelves = new List<HomeShelf>
         {
             new(HomeShelfKind.ContinueWatching, "Continue Watching", "Resume unfinished movies and episodes",
@@ -352,7 +355,7 @@ public static class HomeProjection
         };
         if (newEpisodeIds.Count > 0)
             shelves.Add(new HomeShelf(HomeShelfKind.NewEpisodes, "New Episodes", "Newly indexed episodes of shows you follow",
-                projection.Filtered.Where(t => t.Versions.Any(v => newEpisodeIds.Contains(FollowedEpisodes.EpisodeId(v)))).ToList()));
+                projection.Filtered.Where(t => t.Versions.Any(v => newEpisodeIds.Contains(episodeId(v)))).ToList()));
         foreach (var collection in personal.Collections)
             shelves.Add(new HomeShelf(HomeShelfKind.Collection, collection.Name, "Personal collection",
                 projection.Filtered.Where(t => collection.TitleIds.Contains(t.Id)).ToList(), collection.Id));

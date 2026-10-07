@@ -33,6 +33,8 @@ public sealed partial class EntertainmentStore
     private HashSet<string> _newEpisodeIds = [];
     private HashSet<string> _enrichmentIds = [];
     private readonly CancellationTokenSource _stopping = new();
+    private long _lastWrite = long.MinValue / 2;
+    private bool _personalDirty;
     private Task? _loading;
     private bool _reloadAgain;
     private int _enriching;
@@ -184,7 +186,7 @@ public sealed partial class EntertainmentStore
 
         bool enrich;
         lock (_lock) enrich = _automaticEnrichment && _enrichmentIds.Count > 0;
-        if (enrich && HasTmdbToken()) _ = EnrichAsync(_stopping.Token);
+        if (enrich && HasTmdbToken()) _ = EnrichCoreAsync(_stopping.Token);
     }
 
     private bool HasTmdbToken()
@@ -212,7 +214,10 @@ public sealed partial class EntertainmentStore
 
     /// Enriches up to 50 titles that lack fresh TMDB data. Pauses while indexing runs. Ambiguous titles
     /// are remembered for 7 days and reported so the user can Correct Match.
-    public async Task EnrichAsync(CancellationToken cancellationToken = default)
+    /// Runs on a worker thread: it opens the index and reads the token before its first await.
+    public Task EnrichAsync(CancellationToken cancellationToken = default) => Task.Run(() => EnrichCoreAsync(cancellationToken));
+
+    private async Task EnrichCoreAsync(CancellationToken cancellationToken)
     {
         if (!cancellationToken.CanBeCanceled) cancellationToken = _stopping.Token;
         if (cancellationToken.IsCancellationRequested || _isIndexing() || Interlocked.CompareExchange(ref _enriching, 1, 0) != 0) return;
@@ -375,12 +380,30 @@ public sealed partial class EntertainmentStore
     }
 
     /// Saves playback progress for history, Continue Watching and resume. Ignores invalid numbers.
-    public void RecordPlayback(GlobalSearchResult media, double seconds, double duration, DateTimeOffset? now = null)
+    /// persist: false (periodic progress during playback) updates memory at once but writes the
+    /// personal file at most once per PlaybackWriteInterval; FlushPersonal writes what is pending.
+    public void RecordPlayback(GlobalSearchResult media, double seconds, double duration, DateTimeOffset? now = null, bool persist = true)
     {
         if (!double.IsFinite(seconds) || !double.IsFinite(duration) || seconds < 0 || duration < 0) return;
         var id = media.Entry.Url.AbsoluteUri;
         var record = new EntertainmentPlaybackRecord(seconds, duration, now ?? DateTimeOffset.Now);
-        if (!Mutate(data => data.History[id] = record)) return;
+        bool write;
+        lock (_lock) write = persist || Environment.TickCount64 - _lastWrite >= (long)PlaybackWriteInterval.TotalMilliseconds;
+        if (write)
+        {
+            if (!Mutate(data => data.History[id] = record)) return;
+        }
+        else
+        {
+            lock (_lock)
+            {
+                if (!CanWrite) return;
+                var updated = _personal.Clone();
+                updated.History[id] = record;
+                _personal = updated;
+                _personalDirty = true;
+            }
+        }
         lock (_lock)
         {
             _catalogue = _catalogue.Select(t => t.Versions.Any(v => v.Id == id)
@@ -388,6 +411,28 @@ public sealed partial class EntertainmentStore
                 : t).ToList();
         }
         RaiseChanged();
+    }
+
+    /// Longest delay before periodic playback progress reaches the personal file.
+    public static readonly TimeSpan PlaybackWriteInterval = TimeSpan.FromSeconds(60);
+
+    /// Writes progress that RecordPlayback kept in memory. Returns false when the write failed.
+    public bool FlushPersonal()
+    {
+        lock (_lock)
+        {
+            if (!_personalDirty || !CanWrite) return true;
+            try
+            {
+                Write(_personal);
+                return true;
+            }
+            catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+            {
+                ErrorMessage = error.Message;
+                return false;
+            }
+        }
     }
 
     /// A naturally finished movie becomes watched; the file's progress is set to its full duration.
@@ -424,6 +469,7 @@ public sealed partial class EntertainmentStore
                     updated.Validate();
                     Write(updated);
                     _personal = updated;
+                    _personalDirty = false;
                     ProjectionRevision++;
                 }
                 catch (Exception error) when (error is InvalidImportException or IOException or UnauthorizedAccessException)
@@ -437,8 +483,12 @@ public sealed partial class EntertainmentStore
         return CanWrite;
     }
 
-    private void Write(EntertainmentPersonalData data) =>
+    private void Write(EntertainmentPersonalData data)
+    {
         AtomicFile.WriteAllText(StoragePath, JsonSerializer.Serialize(data, SwiftJson.Options));
+        _lastWrite = Environment.TickCount64;
+        _personalDirty = false;
+    }
 
     // ---------- Portable export / import (personal part) ----------
 

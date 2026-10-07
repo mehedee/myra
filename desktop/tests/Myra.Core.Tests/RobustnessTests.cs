@@ -212,6 +212,24 @@ public sealed class RobustnessTests : IDisposable
         await store.ReloadAsync().WaitAsync(TimeSpan.FromSeconds(5));
     }
 
+    [Fact]
+    public void PeriodicPlaybackProgressIsKeptInMemoryUntilFlushed()
+    {
+        using var fixture = new StoreFixture();
+        var media = new GlobalSearchResult(Guid.NewGuid(), "M", new Uri("https://m.example/"),
+            new DirectoryEntry("A.mkv", new Uri("https://m.example/A.mkv"), EntryKind.File), "A.mkv", null);
+        fixture.Store.RecordPlayback(media, 10, 100); // pause, stop or end: written at once
+        Assert.Equal("10", ReadSeconds(fixture.PersonalPath));
+        fixture.Store.RecordPlayback(media, 20, 100, persist: false);
+        Assert.Equal(20, fixture.Store.Personal.History[media.Entry.Url.AbsoluteUri].Seconds);
+        Assert.Equal("10", ReadSeconds(fixture.PersonalPath));
+        Assert.True(fixture.Store.FlushPersonal());
+        Assert.Equal("20", ReadSeconds(fixture.PersonalPath));
+    }
+
+    private static string ReadSeconds(string path) =>
+        System.Text.Json.Nodes.JsonNode.Parse(System.IO.File.ReadAllText(path))!["history"]!["https://m.example/A.mkv"]!["seconds"]!.ToString();
+
     // ---------- Small files ----------
 
     [Fact]
