@@ -38,6 +38,10 @@ public sealed class AppServices
                 Secrets, isIndexing: () => IndexRefresh.IsRefreshing));
         Metadata = new MetadataService();
         Subtitles = new OpenSubtitlesService();
+        // Myra AI never runs here: the service only loads its settings and usage count.
+        Ai = Create("Myra AI settings", () => CreateAi(Secrets),
+            () => new AiService(Secrets, settingsPath: Path.Combine(Path.GetTempPath(), "Myra-fallback-" + Environment.ProcessId, "MyraAI.json"),
+                usagePath: Path.Combine(Path.GetTempPath(), "Myra-fallback-" + Environment.ProcessId, "MyraAIUsage.json")));
         // Leftover staging databases from a crash; locked (running) ones are skipped.
         _ = Task.Run(() => LibraryIndexer.CleanStaleStaging());
     }
@@ -65,6 +69,12 @@ public sealed class AppServices
     public EntertainmentStore Entertainment { get; }
     public MetadataService Metadata { get; }
     public OpenSubtitlesService Subtitles { get; }
+
+    /// Myra AI (settings, keys through Secrets, requests, reviewed actions). Requests run only when the user asks.
+    public AiService Ai { get; }
+
+    /// Builds the AI service. Checks replace it to use fake providers; the default uses OpenAI and Claude.
+    public static Func<ISecretStore, AiService> CreateAi { get; set; } = secrets => new AiService(secrets);
 
     /// Problems found while starting. The main window shows them; the app stays usable.
     public IReadOnlyList<string> StartupErrors => _startupErrors;
@@ -154,6 +164,13 @@ public sealed class AppServices
     {
         if (Interlocked.Exchange(ref _shutdown, 1) != 0) return;
         IndexRefresh.Cancel();
+        try
+        {
+            Ai.Dispose();
+        }
+        catch (Exception)
+        {
+        }
         Entertainment.StopBackgroundWork(TimeSpan.FromSeconds(3));
         try
         {

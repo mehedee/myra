@@ -28,6 +28,12 @@ public sealed partial class DetailViewModel : ObservableObject, IDisposable
     /// Done / Close.
     public event Action? CloseRequested;
 
+    /// An AI tool was chosen in "Explore with Myra". The host closes Details and opens the AI workspace.
+    public event Action<AiFeature>? AiRequested;
+
+    /// Shows "Explore with Myra". The host sets it when it can open the AI workspace (not in Pick Something).
+    public bool CanAskAi { get; init; }
+
     private EntertainmentTitle _title;
 
     public EntertainmentTitle Title
@@ -100,6 +106,7 @@ public sealed partial class DetailViewModel : ObservableObject, IDisposable
 
     [RelayCommand] private void Play() => PlayRequested?.Invoke(Title);
     [RelayCommand] private void Close() => CloseRequested?.Invoke();
+    [RelayCommand] private void AskAi(AiFeature feature) => AiRequested?.Invoke(feature);
     [RelayCommand] private void ToggleWatchlist() => _main.Entertainment.ToggleWatchlist(Title.Id);
     [RelayCommand] private void ToggleWatched() => _main.Entertainment.ToggleWatched(Title.Id);
     [RelayCommand] private void ToggleFollow() => _main.Entertainment.ToggleFollow(Title.Id);

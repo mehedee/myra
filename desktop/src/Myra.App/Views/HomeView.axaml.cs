@@ -15,6 +15,7 @@ public partial class HomeView : UserControl
         {
             var labels = bounds.Width >= 900;
             PickLabel.IsVisible = labels;
+            AiLabel.IsVisible = labels;
             MetadataLabel.IsVisible = labels;
             PersonalLabel.IsVisible = labels;
         }));

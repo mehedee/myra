@@ -326,6 +326,9 @@ public sealed partial class HomeViewModel : ObservableObject
 
     [RelayCommand] private Task ExportImportAsync() => _main.OpenPersonalLibraryAsync();
 
+    /// Myra AI menu: Help Me Choose, Library Assistant, natural-language search, Plan Tonight, Viewing Insights.
+    [RelayCommand] private Task OpenAiAsync(AiFeature feature) => _main.OpenAiAsync(feature);
+
     [RelayCommand] private void ClearError() => Store.ClearError();
 
     // Card actions.

@@ -803,9 +803,50 @@ public sealed partial class MainViewModel : ObservableObject
     public async Task ShowDetailsAsync(EntertainmentTitle title)
     {
         if (Windows is null) return;
-        using var details = new DetailViewModel(this, title);
+        using var details = new DetailViewModel(this, title) { CanAskAi = true };
+        AiFeature? ai = null;
+        details.AiRequested += feature => ai = feature;
         var chosen = await Windows.ShowDetailsAsync(details);
         if (chosen is not null) await StartTitleAsync(chosen);
+        // macOS closes Details first, then opens the AI workspace for the title.
+        else if (ai is { } feature) await OpenAiAsync(feature, details.Title);
+    }
+
+    // ---------- Myra AI ----------
+
+    /// Shows the AI workspace and returns the title to play, or null. MainWindow sets it; checks replace it.
+    public Func<AiWorkspaceViewModel, Task<EntertainmentTitle?>>? ShowAiWorkspace { get; set; }
+
+    /// Shows AI Settings on its own. MainWindow sets it.
+    public Func<Task>? ShowAiSettings { get; set; }
+
+    /// Opens the AI workspace on a tool, optionally with a title selected. AI runs only when the user asks there.
+    public async Task OpenAiAsync(AiFeature feature, EntertainmentTitle? title = null)
+    {
+        if (ShowAiWorkspace is null) return;
+        EntertainmentTitle? play;
+        using (var workspace = new AiWorkspaceViewModel(this, feature, title))
+        {
+            try
+            {
+                play = await ShowAiWorkspace(workspace);
+            }
+            catch (Exception error) when (error is not OperationCanceledException)
+            {
+                ErrorMessage = "Myra AI could not open: " + error.Message;
+                return;
+            }
+        }
+        if (play is not null) await StartTitleAsync(play);
+    }
+
+    [RelayCommand]
+    private Task OpenAi(AiFeature feature) => OpenAiAsync(feature);
+
+    [RelayCommand]
+    private async Task OpenAiSettingsAsync()
+    {
+        if (ShowAiSettings is not null) await ShowAiSettings();
     }
 
     /// macOS HomeView.start: resume the latest unfinished file, play a single file, or choose an episode/version.

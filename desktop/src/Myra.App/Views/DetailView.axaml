@@ -2,6 +2,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:Myra.App.ViewModels"
              xmlns:views="using:Myra.App.Views"
+             xmlns:core="using:Myra.Core"
              x:Class="Myra.App.Views.DetailView"
              x:DataType="vm:DetailViewModel">
   <!-- Title Details (macOS EntertainmentDetailView). Pick Something shows it with a pick header. -->
@@ -68,6 +69,25 @@
         </StackPanel>
       </Grid>
 
+      <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8" IsVisible="{Binding CanAskAi}" x:Name="AiRow">
+        <PathIcon Data="{StaticResource IconSparkles}" Width="15" Height="15" />
+        <TextBlock Grid.Column="1" Text="Explore with Myra" FontWeight="SemiBold" VerticalAlignment="Center" />
+        <Button Grid.Column="2" Content="AI tools" x:Name="AiToolsButton">
+          <Button.Flyout>
+            <MenuFlyout>
+              <MenuItem Header="More Like This" Command="{Binding AskAiCommand}" CommandParameter="{x:Static core:AiFeature.Similar}" />
+              <MenuItem Header="Compare Titles" Command="{Binding AskAiCommand}" CommandParameter="{x:Static core:AiFeature.Compare}" />
+              <MenuItem Header="Short Summary" Command="{Binding AskAiCommand}" CommandParameter="{x:Static core:AiFeature.Summary}" />
+              <MenuItem Header="Why This Title?" Command="{Binding AskAiCommand}" CommandParameter="{x:Static core:AiFeature.Explain}" />
+              <MenuItem Header="Suggest Mood Tags" Command="{Binding AskAiCommand}" CommandParameter="{x:Static core:AiFeature.MoodTags}" />
+              <MenuItem Header="Translate Description" Command="{Binding AskAiCommand}" CommandParameter="{x:Static core:AiFeature.Translate}" />
+              <MenuItem Header="Episode Recap" Command="{Binding AskAiCommand}" CommandParameter="{x:Static core:AiFeature.Recap}"
+                        IsEnabled="{Binding IsSeries}" />
+              <MenuItem Header="Suggest Match Corrections" Command="{Binding AskAiCommand}" CommandParameter="{x:Static core:AiFeature.Cleanup}" />
+            </MenuFlyout>
+          </Button.Flyout>
+        </Button>
+      </Grid>
       <Separator />
       <TextBlock Text="{Binding VersionsHeading}" Classes="title" />
       <views:DetailEpisodeList DataContext="{Binding Episodes}" />

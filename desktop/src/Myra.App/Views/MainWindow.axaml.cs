@@ -39,6 +39,8 @@ public partial class MainWindow : Window, IShellWindows
             if (Clipboard is not null) await Clipboard.SetTextAsync(text);
         };
         vm.ShowPlayerWindow = ShowPlayerWindow;
+        vm.ShowAiWorkspace = workspace => AiWorkspaceWindow.ShowAsync(this, workspace);
+        vm.ShowAiSettings = () => AiSettingsWindow.ShowAsync(this, vm.Services.Ai);
     }
 
     // ---------- IShellWindows ----------
