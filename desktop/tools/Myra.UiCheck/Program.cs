@@ -41,6 +41,7 @@ async Task Pump(Func<bool> until, int timeoutMs = 15000)
 void Save(MainWindow window, string name)
 {
     Dispatcher.UIThread.RunJobs();
+    AvaloniaHeadlessPlatform.ForceRenderTimerTick(2);
     window.CaptureRenderedFrame()?.Save(Path.Combine(output, name));
     Console.WriteLine("saved " + name);
 }
@@ -190,6 +191,8 @@ var work = Dispatcher.UIThread.InvokeAsync(async () =>
         Save(window, "05-downloads.png");
     }
 
+    await ShellChecks.RunAsync(window, vm, services, root, output, data, Check, Pump);
+
     // Player rules that need no libVLC.
     var stall = new PlayerStallDetector();
     stall.Reset(0);
@@ -237,7 +240,7 @@ var work = Dispatcher.UIThread.InvokeAsync(async () =>
         };
         vm.SearchText = "";
         await vm.NavigateAsync(new Uri(new Uri(root), "TV%20Series/Some%20Show/Season%201/"));
-        vm.Play(vm.Entries[0].Entry);
+        await vm.Play(vm.Entries[0].Entry);
         Check(player is not null, "player opened " + vm.ErrorMessage);
         if (player is null) throw new InvalidOperationException("player did not open");
         await Pump(() => player!.State == PlayerState.Playing && player.Duration > 0, 10000);
@@ -280,7 +283,7 @@ var work = Dispatcher.UIThread.InvokeAsync(async () =>
 
         // English audio and subtitles are chosen over French defaults.
         await vm.NavigateAsync(new Uri(new Uri(root), "Tracks/"));
-        vm.Play(vm.Entries.First(e => e.Name == "TrackDefaults.mkv").Entry);
+        await vm.Play(vm.Entries.First(e => e.Name == "TrackDefaults.mkv").Entry);
         await Pump(() => player.State == PlayerState.Playing && player.AudioTracks.Count >= 2 && player.SubtitleTracks.Count >= 2, 10000);
         await Pump(() => false, 800);
         Check(player.SelectedAudio?.Name.Contains("English", StringComparison.OrdinalIgnoreCase) == true,
@@ -293,19 +296,21 @@ var work = Dispatcher.UIThread.InvokeAsync(async () =>
         Check(player.MediaPlayer.AudioTrack == french.Id, "manual audio choice is kept");
 
         // Resume position.
-        vm.Play(vm.Entries.First(e => e.Name.StartsWith("Long Clip")).Entry);
+        await vm.Play(vm.Entries.First(e => e.Name.StartsWith("Long Clip")).Entry);
         await Pump(() => player.State == PlayerState.Playing && player.Duration > 15, 10000);
         player.SeekTo(9);
         await Pump(() => false, 6000);
-        vm.Play(vm.Entries.First(e => e.Name == "TrackDefaults.mkv").Entry);
+        await vm.Play(vm.Entries.First(e => e.Name == "TrackDefaults.mkv").Entry);
         await Pump(() => player.Title == "TrackDefaults" && player.State == PlayerState.Playing, 10000);
-        vm.Play(vm.Entries.First(e => e.Name.StartsWith("Long Clip")).Entry);
+        await vm.Play(vm.Entries.First(e => e.Name.StartsWith("Long Clip")).Entry);
         await Pump(() => player.Title.StartsWith("Long Clip") && player.State == PlayerState.Playing && player.IsSeekable, 10000);
         Check(player.ResumePosition is >= 9, $"resume prompt offers the saved position ({player.ResumePosition:0.0}s)");
         player.ResumeSavedPositionCommand.Execute(null);
         await Pump(() => player.Position >= 9, 5000);
         Check(player.Position >= 9 && player.ResumePosition is null, $"Resume jumps to the saved position ({player.Position:0.0}s)");
         // Command-line playback ("Myra.exe <url>") builds its queue from the URL's folder.
+        // Command-line playback uses its own player window.
+        vm.ShowPlayerWindow = p => player = p;
         vm.PlayTarget(new Uri(new Uri(root), "TV%20Series/Some%20Show/Season%201/Some.Show.S01E02.720p.mkv").AbsoluteUri);
         await Pump(() => player.Title.Contains("S01E02") && player.State == PlayerState.Playing, 10000);
         Check(player.Title.Contains("S01E02") && player.HasPrevious && player.HasNext, "command-line URL plays with its folder as the queue");
