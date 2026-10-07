@@ -54,8 +54,12 @@ build/             Windows and Linux packaging, Linux installer, packaged-app sm
 
 ## Update an installed copy (from WSL)
 
-`./build/update-windows.sh [install-dir]` builds the zip, closes Myra, keeps the old folder as `<install-dir>.previous`, copies the new build in and starts it again.
-The first start migrates the index to schema v3 and keeps `LibraryIndex.sqlite.v2-backup`; older builds cannot open a v3 index, so restore that backup before rolling back.
+`./build/update-windows.sh [install-dir]` (default `D:\tdw\Myra-win-x64`) builds the zip, closes Myra,
+keeps an existing install as `<install-dir>.previous`, copies the new build in and starts it.
+On the first run it copies a former SamBD profile (`%APPDATA%\SamBD`) to `%APPDATA%\Myra` with
+`build/migrate-profile.py`; the SamBD profile and install are left unchanged for rollback.
+The first start migrates the index to schema v3 and keeps `LibraryIndex.sqlite.v2-backup`;
+older builds cannot open a v3 index, so restore that backup before rolling back.
 
 ## Build
 
@@ -73,7 +77,9 @@ On Windows: `powershell -ExecutionPolicy Bypass -File build\package-windows.ps1`
 ## Verification
 
 The `desktop-windows-linux` branch preserves this edition as a clean Myra snapshot;
-`master` contains the macOS edition. Shared version 3.0.1 does not imply feature parity.
+`master` contains the macOS edition. Shared version 3.0.1 does not imply feature parity:
+this edition matches the macOS 2.0.5 feature set (see Features). The macOS 3.0 additions —
+AI experiences, fuzzy Global search (schema 4), icon families and free-first subtitles — are not ported yet.
 Verification on 2026-10-07: all 63 .NET unit tests and five profile-migration tests
 passed using .NET 10.0.401 on macOS. The Avalonia app and headless checker compiled
 in Release mode with zero warnings. The checker passed source browsing, natural
