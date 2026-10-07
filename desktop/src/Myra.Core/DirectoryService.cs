@@ -30,7 +30,7 @@ public sealed partial class DirectoryService
     }
 
     public async Task<DirectoryListing> ListingAsync(Uri url, UrlBoundary boundary, CancellationToken cancellationToken = default) =>
-        (await ConditionalListingAsync(url, boundary, null, cancellationToken)).Listing;
+        (await ConditionalListingAsync(url, boundary, null, cancellationToken).ConfigureAwait(false)).Listing;
 
     /// Conditional GET: sends If-None-Match (preferred) or If-Modified-Since from the cached snapshot.
     /// A 304 reply returns the cached snapshot with a new check time and skips HTML parsing.
@@ -41,7 +41,7 @@ public sealed partial class DirectoryService
         using var request = new HttpRequestMessage(HttpMethod.Get, url);
         if (cached?.ETag is { } tag) request.Headers.TryAddWithoutValidation("If-None-Match", tag);
         else if (cached?.LastModified is { } modified) request.Headers.TryAddWithoutValidation("If-Modified-Since", modified);
-        using var response = await _client.SendAsync(request, cancellationToken);
+        using var response = await _client.SendAsync(request, cancellationToken).ConfigureAwait(false);
         // Redirects must stay inside the source boundary.
         if (response.RequestMessage?.RequestUri is { } final && !boundary.Contains(final))
             throw new DirectoryException(DirectoryErrorKind.OutsideCategoryRoot);
@@ -49,7 +49,7 @@ public sealed partial class DirectoryService
             return cached with { Checked = DateTimeOffset.Now };
         if (!response.IsSuccessStatusCode)
             throw new DirectoryException(DirectoryErrorKind.BadResponse, (int)response.StatusCode);
-        var data = await response.Content.ReadAsByteArrayAsync(cancellationToken);
+        var data = await response.Content.ReadAsByteArrayAsync(cancellationToken).ConfigureAwait(false);
         var html = Decode(data);
         var parsed = Parse(html, url, boundary);
         if (parsed.Count == 0 && !html.Contains("Parent Directory", StringComparison.OrdinalIgnoreCase))

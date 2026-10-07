@@ -152,15 +152,18 @@ public sealed class EntertainmentPersonalData
     };
 
     /// Same limits as macOS. Throws InvalidImportException when a document is unsafe to keep.
+    /// JSON can set any member or element to null, so every reference is checked before use.
     public void Validate()
     {
-        var valid = SchemaVersion == 1 && Collections.Count <= 5000 && History.Count <= 100_000
-            && MatchCorrections.Count <= 100_000
+        static bool NoNulls(HashSet<string>? set) => set is not null && set.All(v => v is not null);
+        var valid = SchemaVersion == 1
+            && NoNulls(Watchlist) && NoNulls(Watched) && NoNulls(Followed) && NoNulls(KnownEpisodeIds)
+            && Preferences is not null && Collections is not null && History is not null && MatchCorrections is not null
+            && Collections.Count <= 5000 && History.Count <= 100_000 && MatchCorrections.Count <= 100_000
+            && Collections.All(c => c is not null && c.Name is { Length: > 0 and <= 200 } && NoNulls(c.TitleIds))
             && Collections.Select(c => c.Id).Distinct().Count() == Collections.Count
-            && Collections.All(c => c.Name.Length is > 0 and <= 200 && c.TitleIds is not null)
             && History.Values.All(r => r is not null && double.IsFinite(r.Seconds) && double.IsFinite(r.Duration) && r.Seconds >= 0 && r.Duration >= 0)
-            && MatchCorrections.Values.All(c => c is not null && c.Title.Length is > 0 and <= 300 && (c.ProviderId is null || c.ProviderId > 0))
-            && Watchlist is not null && Watched is not null && Followed is not null && KnownEpisodeIds is not null && Preferences is not null;
+            && MatchCorrections.Values.All(c => c is not null && c.Title is { Length: > 0 and <= 300 } && (c.ProviderId is null || c.ProviderId > 0));
         if (!valid) throw new InvalidImportException("Invalid personal library data.");
     }
 }

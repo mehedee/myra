@@ -192,7 +192,7 @@ public sealed partial class OpenSubtitlesService
         if (credentials.Username.Length == 0 || credentials.Password.Length == 0) throw new SubtitleException(SubtitleErrorKind.Authentication);
         ResetSession();
         var body = JsonSerializer.Serialize(new { username = credentials.Username, password = credentials.Password });
-        var data = await ApiAsync("login", HttpMethod.Post, body, credentials, ApiLimit, cancellationToken);
+        var data = await ApiAsync("login", HttpMethod.Post, body, credentials, ApiLimit, cancellationToken).ConfigureAwait(false);
         LoginReply? reply;
         try
         {
@@ -215,7 +215,7 @@ public sealed partial class OpenSubtitlesService
     {
         if (_authenticated != credentials || DateTimeOffset.UtcNow >= _tokenExpires) ResetSession();
         if ((credentials.Username.Length > 0 || credentials.Password.Length > 0) && _token.Length == 0)
-            await SignInAsync(credentials, cancellationToken);
+            await SignInAsync(credentials, cancellationToken).ConfigureAwait(false);
     }
 
     [GeneratedRegex("^[a-z]{2,3}(?:-[a-z]{2})?$")]
@@ -245,13 +245,13 @@ public sealed partial class OpenSubtitlesService
         if (identity.ImdbId?.Replace("tt", "") is { Length: > 0 } imdb && long.TryParse(imdb, NumberStyles.None, CultureInfo.InvariantCulture, out _))
             items.Add(("imdb_id", imdb));
         ValidateKey(credentials);
-        await _session.WaitAsync(cancellationToken);
+        await _session.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            await AuthenticateIfNeededAsync(credentials, cancellationToken);
+            await AuthenticateIfNeededAsync(credentials, cancellationToken).ConfigureAwait(false);
             var query = string.Join('&', items.OrderBy(i => i.Name, StringComparer.Ordinal)
                 .Select(i => Uri.EscapeDataString(i.Name) + "=" + Uri.EscapeDataString(i.Value)));
-            var data = await ApiAsync("subtitles?" + query, HttpMethod.Get, null, credentials, SearchLimit, cancellationToken);
+            var data = await ApiAsync("subtitles?" + query, HttpMethod.Get, null, credentials, SearchLimit, cancellationToken).ConfigureAwait(false);
             SearchReply? reply;
             try
             {
@@ -292,13 +292,13 @@ public sealed partial class OpenSubtitlesService
         if (result.Id <= 0) throw new SubtitleException(SubtitleErrorKind.InvalidFile);
         ValidateKey(credentials);
         DownloadReply? reply;
-        await _session.WaitAsync(cancellationToken);
+        await _session.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            await AuthenticateIfNeededAsync(credentials, cancellationToken);
+            await AuthenticateIfNeededAsync(credentials, cancellationToken).ConfigureAwait(false);
             var body = JsonSerializer.Serialize(new { file_id = result.Id, sub_format = "srt" });
             // No automatic retry: this POST may consume the user's provider allowance.
-            var data = await ApiAsync("download", HttpMethod.Post, body, credentials, ApiLimit, cancellationToken);
+            var data = await ApiAsync("download", HttpMethod.Post, body, credentials, ApiLimit, cancellationToken).ConfigureAwait(false);
             try
             {
                 reply = JsonSerializer.Deserialize<DownloadReply>(data);
@@ -320,7 +320,7 @@ public sealed partial class OpenSubtitlesService
             var request = new HttpRequestMessage(HttpMethod.Get, link);
             request.Headers.UserAgent.ParseAdd("Myra v1.0");
             return request;
-        }, download: true, SubtitleCache.MaximumFileBytes, cancellationToken);
+        }, download: true, SubtitleCache.MaximumFileBytes, cancellationToken).ConfigureAwait(false);
         cancellationToken.ThrowIfCancellationRequested();
         return (cache.Store(subtitle, result.Id), reply.Remaining);
     }
@@ -363,7 +363,7 @@ public sealed partial class OpenSubtitlesService
                 var request = new HttpRequestMessage(HttpMethod.Get, target);
                 request.Headers.UserAgent.ParseAdd("Myra v1.0");
                 return request;
-            }, target => SubtitleUrlPolicy.Accepts(target, download) && (download || target.Host == originalHost), cancellationToken);
+            }, target => SubtitleUrlPolicy.Accepts(target, download) && (download || target.Host == originalHost), cancellationToken).ConfigureAwait(false);
             using (response)
             {
                 if (!SubtitleUrlPolicy.Accepts(final, download)) throw new SubtitleException(SubtitleErrorKind.UnsafeUrl);
@@ -382,7 +382,7 @@ public sealed partial class OpenSubtitlesService
                     default:
                         throw new SubtitleException(SubtitleErrorKind.Server, status);
                 }
-                var data = await SafeHttp.ReadBoundedAsync(response, limit, () => new SubtitleException(SubtitleErrorKind.Oversized), cancellationToken);
+                var data = await SafeHttp.ReadBoundedAsync(response, limit, () => new SubtitleException(SubtitleErrorKind.Oversized), cancellationToken).ConfigureAwait(false);
                 cancellationToken.ThrowIfCancellationRequested();
                 return data;
             }

@@ -221,7 +221,7 @@ internal sealed class IndexListingLoader(
         var root = roots.FirstOrDefault(r => boundary.SourceId is { } id ? r.Id == id : r.Url.SameAs(boundary.Root))
                    ?? throw new DirectoryException(DirectoryErrorKind.OutsideCategoryRoot);
         var scope = new IndexScope(root, url.SameAs(root.Url) ? root.Url : url);
-        var old = await Task.Run(() => active.Folder(scope), cancellationToken);
+        var old = await Task.Run(() => active.Folder(scope), cancellationToken).ConfigureAwait(false);
         var schedule = policies.ScheduleFor(scope);
         var manualBlocked = IsManualBlocked(scope);
         var useCache = !full && (manualBlocked || (automatic && !schedule.IsDue(old?.Checked)));
@@ -233,7 +233,7 @@ internal sealed class IndexListingLoader(
         }
         else
         {
-            value = await service.ConditionalListingAsync(url, boundary, full ? null : old, cancellationToken);
+            value = await service.ConditionalListingAsync(url, boundary, full ? null : old, cancellationToken).ConfigureAwait(false);
             Interlocked.Increment(ref _checked);
             if (old is not null && IndexedFolder.SameContent(old.Listing, value.Listing)) Interlocked.Increment(ref _unchanged);
         }
@@ -248,7 +248,7 @@ internal sealed class IndexListingLoader(
                     entries.Add(entry);
             value = value with { Listing = value.Listing with { Entries = entries } };
         }
-        await Task.Run(() => staging.SaveFolder(value, scope), cancellationToken);
+        await Task.Run(() => staging.SaveFolder(value, scope), cancellationToken).ConfigureAwait(false);
         return value.Listing;
     }
 

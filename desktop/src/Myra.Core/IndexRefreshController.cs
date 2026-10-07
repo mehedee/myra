@@ -75,10 +75,16 @@ public sealed class IndexRefreshController
         StateChanged?.Invoke(this, EventArgs.Empty);
     }
 
+    /// Reads the folder rows off the calling thread. An unavailable index leaves the rows unchanged.
     public async Task LoadFolderRowsAsync(IReadOnlyList<GlobalSearchRoot> roots)
     {
-        var index = _index();
-        FolderRows = await Task.Run(() => index.FolderRows(roots));
+        try
+        {
+            FolderRows = await Task.Run(() => _index().FolderRows(roots)).ConfigureAwait(false);
+        }
+        catch (Exception)
+        {
+        }
         StateChanged?.Invoke(this, EventArgs.Empty);
     }
 
@@ -110,6 +116,12 @@ public sealed class IndexRefreshController
         StateChanged?.Invoke(this, EventArgs.Empty);
     }
 
+    /// The latest refresh run (completed when idle). Shutdown waits on it after Cancel.
+    public Task Running
+    {
+        get { lock (_lock) return _previous; }
+    }
+
     /// Cancels the running refresh. Staged changes are discarded; the published index is unchanged.
     public void Cancel()
     {
@@ -139,7 +151,8 @@ public sealed class IndexRefreshController
             _resume.TrySetResult();
             Progress = new GlobalSearchProgress { SourcesTotal = roots.Count };
         }
-        var task = RunAsync(roots, mode, manual, scopes, full, prepare, previous, cancellation);
+        // The whole run, including opening the index, stays off the caller's (UI) thread.
+        var task = Task.Run(() => RunAsync(roots, mode, manual, scopes, full, prepare, previous, cancellation));
         lock (_lock) _previous = task;
         return task;
     }
@@ -151,12 +164,11 @@ public sealed class IndexRefreshController
         var token = cancellation.Token;
         try
         {
-            await previous.ContinueWith(_ => { }, TaskScheduler.Default);
+            await previous.ContinueWith(_ => { }, TaskScheduler.Default).ConfigureAwait(false);
         }
         catch (Exception)
         {
         }
-        if (prepare is not null) await prepare();
         var changed = false;
         var summary = new IndexRefreshSummary();
         string? error = null;
@@ -164,12 +176,23 @@ public sealed class IndexRefreshController
         var cancelled = false;
         try
         {
+            // A failed preparation (for example the Home restore) must not leave IsRefreshing set.
+            if (prepare is not null)
+            {
+                try
+                {
+                    await prepare().ConfigureAwait(false);
+                }
+                catch (Exception failure) when (failure is not OperationCanceledException)
+                {
+                }
+            }
             token.ThrowIfCancellationRequested();
             var index = _index();
-            var before = await Task.Run(index.Revision, token);
-            await Task.Run(() => index.SynchronizeSources(roots), token);
-            LastRefresh = await Task.Run(index.LastRefresh, token);
-            FolderRows = await Task.Run(() => index.FolderRows(roots), token);
+            var before = await Task.Run(index.Revision, token).ConfigureAwait(false);
+            await Task.Run(() => index.SynchronizeSources(roots), token).ConfigureAwait(false);
+            LastRefresh = await Task.Run(index.LastRefresh, token).ConfigureAwait(false);
+            FolderRows = await Task.Run(() => index.FolderRows(roots), token).ConfigureAwait(false);
             var selected = mode switch
             {
                 IndexRefreshMode.Selected => IndexScope.Compact(scopes ?? []),
@@ -179,7 +202,7 @@ public sealed class IndexRefreshController
             if (selected.Count == 0)
             {
                 if (manual) completion = "All scheduled folders are up to date.";
-                changed = await Task.Run(index.Revision, token) != before;
+                changed = await Task.Run(index.Revision, token).ConfigureAwait(false) != before;
                 return Finish(new IndexRefreshOutcome(changed, false, summary, [], Progress, null, completion), cancellation);
             }
             Failures = [];
@@ -206,14 +229,14 @@ public sealed class IndexRefreshController
                 {
                     Task wait;
                     lock (_lock) wait = _resume.Task;
-                    await wait.WaitAsync(t);
-                });
+                    await wait.WaitAsync(t).ConfigureAwait(false);
+                }).ConfigureAwait(false);
             token.ThrowIfCancellationRequested();
             summary = indexer.Summary;
             Progress = snapshot.Progress;
             Failures = snapshot.Failures;
-            changed = await Task.Run(index.Revision, token) != before;
-            LastRefresh = await Task.Run(index.LastRefresh, token);
+            changed = await Task.Run(index.Revision, token).ConfigureAwait(false) != before;
+            LastRefresh = await Task.Run(index.LastRefresh, token).ConfigureAwait(false);
             if (manual)
                 completion = summary.Text + (Failures.Count == 0 ? "" : $" {Failures.Count} source(s) could not be fully refreshed; previous records were retained.");
         }
@@ -231,7 +254,7 @@ public sealed class IndexRefreshController
             try
             {
                 var index = _index();
-                FolderRows = await Task.Run(() => index.FolderRows(roots));
+                FolderRows = await Task.Run(() => index.FolderRows(roots)).ConfigureAwait(false);
             }
             catch (Exception)
             {

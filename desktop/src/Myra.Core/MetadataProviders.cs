@@ -82,11 +82,11 @@ public sealed class DiscoveryService
 
     private async Task<T> RequestAsync<T>(string path, IEnumerable<(string Name, string Value)> query, string token, CancellationToken cancellationToken)
     {
-        await _gate.WaitAsync(cancellationToken);
+        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
             var wait = _interval - (DateTimeOffset.UtcNow - _lastRequest);
-            if (wait > TimeSpan.Zero) await Task.Delay(wait, cancellationToken);
+            if (wait > TimeSpan.Zero) await Task.Delay(wait, cancellationToken).ConfigureAwait(false);
             var text = string.Join('&', query.Select(q => Uri.EscapeDataString(q.Name) + "=" + Uri.EscapeDataString(q.Value)));
             var url = new Uri($"https://{Host}/3/{path}" + (text.Length > 0 ? "?" + text : ""));
             _lastRequest = DateTimeOffset.UtcNow;
@@ -99,7 +99,7 @@ public sealed class DiscoveryService
                     request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
                     request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
                     return request;
-                }, target => target.Scheme == Uri.UriSchemeHttps && target.Host == Host && target.IsDefaultPort, cancellationToken);
+                }, target => target.Scheme == Uri.UriSchemeHttps && target.Host == Host && target.IsDefaultPort, cancellationToken).ConfigureAwait(false);
             }
             catch (HttpRequestException)
             {
@@ -112,7 +112,7 @@ public sealed class DiscoveryService
             using (response)
             {
                 if (!SafeHttp.IsSuccess(response.StatusCode)) throw new DiscoveryException(DiscoveryErrorKind.InvalidResponse);
-                var data = await SafeHttp.ReadBoundedAsync(response, ResponseLimit, () => new DiscoveryException(DiscoveryErrorKind.InvalidResponse), cancellationToken);
+                var data = await SafeHttp.ReadBoundedAsync(response, ResponseLimit, () => new DiscoveryException(DiscoveryErrorKind.InvalidResponse), cancellationToken).ConfigureAwait(false);
                 try
                 {
                     return JsonSerializer.Deserialize<T>(data) ?? throw new DiscoveryException(DiscoveryErrorKind.InvalidResponse);
@@ -149,7 +149,7 @@ public sealed class DiscoveryService
         {
             var query = new List<(string, string)> { ("query", title.Name), ("include_adult", "false") };
             if (title.Year is { } year) query.Add((title.Kind == EntertainmentKind.Movie ? "primary_release_year" : "first_air_date_year", year));
-            var search = await RequestAsync<SearchReply>("search/" + category, query, token, cancellationToken);
+            var search = await RequestAsync<SearchReply>("search/" + category, query, token, cancellationToken).ConfigureAwait(false);
             var wanted = TextFolding.Fold(title.Name);
             var exact = search.Results.Where(r =>
                 TextFolding.Fold(r.Title ?? r.Name ?? "") == wanted
@@ -158,7 +158,7 @@ public sealed class DiscoveryService
             id = exact[0].Id;
         }
 
-        var item = await RequestAsync<Item>($"{category}/{id}", [], token, cancellationToken);
+        var item = await RequestAsync<Item>($"{category}/{id}", [], token, cancellationToken).ConfigureAwait(false);
         Dictionary<string, string>? dates = null;
         if (title.Kind == EntertainmentKind.Series)
         {
@@ -179,7 +179,7 @@ public sealed class DiscoveryService
                 }
                 if (payload is null)
                 {
-                    payload = await RequestAsync<SeasonReply>($"tv/{id}/season/{season}", [], token, cancellationToken);
+                    payload = await RequestAsync<SeasonReply>($"tv/{id}/season/{season}", [], token, cancellationToken).ConfigureAwait(false);
                     index.SaveMetadata(seasonKey, JsonSerializer.Serialize(payload));
                 }
                 var available = title.Versions.Where(v => v.Season == season && v.Episode is not null).Select(v => v.Episode!.Value).ToHashSet();
@@ -295,11 +295,11 @@ public sealed partial class MetadataService
         try
         {
             var (response, _) = await SafeHttp.SendAsync(_client, url, target => new HttpRequestMessage(HttpMethod.Get, target),
-                target => target.Scheme == Uri.UriSchemeHttps && target.Host == Host, cancellationToken);
+                target => target.Scheme == Uri.UriSchemeHttps && target.Host == Host, cancellationToken).ConfigureAwait(false);
             using (response)
             {
                 if (!SafeHttp.IsSuccess(response.StatusCode)) throw new MetadataException(MetadataErrorKind.BadResponse);
-                data = await SafeHttp.ReadBoundedAsync(response, ResponseLimit, () => new MetadataException(MetadataErrorKind.BadResponse), cancellationToken);
+                data = await SafeHttp.ReadBoundedAsync(response, ResponseLimit, () => new MetadataException(MetadataErrorKind.BadResponse), cancellationToken).ConfigureAwait(false);
             }
         }
         catch (HttpRequestException)

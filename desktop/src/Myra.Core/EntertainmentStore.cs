@@ -32,6 +32,7 @@ public sealed partial class EntertainmentStore
     private IReadOnlyList<EntertainmentTitle> _catalogue = [];
     private HashSet<string> _newEpisodeIds = [];
     private HashSet<string> _enrichmentIds = [];
+    private readonly CancellationTokenSource _stopping = new();
     private Task? _loading;
     private bool _reloadAgain;
     private int _enriching;
@@ -58,8 +59,9 @@ public sealed partial class EntertainmentStore
             loaded.Validate();
             _personal = loaded;
         }
-        catch (Exception error) when (error is JsonException or InvalidImportException or IOException or UnauthorizedAccessException or NotSupportedException)
+        catch (Exception error)
         {
+            // Any failure (including unexpected shapes) keeps the file untouched and the app usable.
             CanWrite = false;
             ErrorMessage = "Personal library could not be loaded. The existing file has been preserved: " + error.Message;
         }
@@ -97,6 +99,24 @@ public sealed partial class EntertainmentStore
         Changed?.Invoke(this, EventArgs.Empty);
     }
 
+    /// Shutdown: cancels catalogue preparation and enrichment, then waits up to timeout for them to stop.
+    public bool StopBackgroundWork(TimeSpan timeout)
+    {
+        _stopping.Cancel();
+        Task? loading;
+        lock (_lock) loading = _loading;
+        var deadline = Environment.TickCount64 + (long)timeout.TotalMilliseconds;
+        try
+        {
+            if (loading is not null && !loading.Wait(timeout)) return false;
+        }
+        catch (AggregateException)
+        {
+        }
+        while (IsEnriching && Environment.TickCount64 < deadline) Thread.Sleep(20);
+        return !IsEnriching;
+    }
+
     public void ClearError()
     {
         ErrorMessage = null;
@@ -109,6 +129,8 @@ public sealed partial class EntertainmentStore
     /// callers resume when the catalogue is current. Automatic enrichment then starts in the background.
     public Task ReloadAsync(CancellationToken cancellationToken = default)
     {
+        if (_stopping.IsCancellationRequested) return Task.CompletedTask;
+        if (!cancellationToken.CanBeCanceled) cancellationToken = _stopping.Token;
         lock (_lock)
         {
             if (_loading is { IsCompleted: false } running)
@@ -130,7 +152,7 @@ public sealed partial class EntertainmentStore
             try
             {
                 var personal = Personal;
-                var prepared = await Task.Run(() => EntertainmentCatalogue.Prepare(_index(), personal, cancellationToken), cancellationToken);
+                var prepared = await Task.Run(() => EntertainmentCatalogue.Prepare(_index(), personal, cancellationToken), cancellationToken).ConfigureAwait(false);
                 lock (_lock)
                 {
                     again = _reloadAgain;
@@ -151,8 +173,9 @@ public sealed partial class EntertainmentStore
             {
                 return;
             }
-            catch (Exception error) when (error is LibraryIndexException or Microsoft.Data.Sqlite.SqliteException or IOException)
+            catch (Exception error)
             {
+                // Background work: report every failure in the UI instead of faulting an unobserved task.
                 ErrorMessage = error.Message;
                 RaiseChanged();
                 lock (_lock) again = _reloadAgain;
@@ -161,7 +184,7 @@ public sealed partial class EntertainmentStore
 
         bool enrich;
         lock (_lock) enrich = _automaticEnrichment && _enrichmentIds.Count > 0;
-        if (enrich && HasTmdbToken()) _ = EnrichAsync(CancellationToken.None);
+        if (enrich && HasTmdbToken()) _ = EnrichAsync(_stopping.Token);
     }
 
     private bool HasTmdbToken()
@@ -191,7 +214,8 @@ public sealed partial class EntertainmentStore
     /// are remembered for 7 days and reported so the user can Correct Match.
     public async Task EnrichAsync(CancellationToken cancellationToken = default)
     {
-        if (_isIndexing() || Interlocked.CompareExchange(ref _enriching, 1, 0) != 0) return;
+        if (!cancellationToken.CanBeCanceled) cancellationToken = _stopping.Token;
+        if (cancellationToken.IsCancellationRequested || _isIndexing() || Interlocked.CompareExchange(ref _enriching, 1, 0) != 0) return;
         RaiseChanged();
         try
         {
@@ -203,12 +227,12 @@ public sealed partial class EntertainmentStore
             var uncertain = 0;
             foreach (var target in targets)
             {
-                while (_isIndexing()) await Task.Delay(500, cancellationToken);
+                while (_isIndexing()) await Task.Delay(500, cancellationToken).ConfigureAwait(false);
                 cancellationToken.ThrowIfCancellationRequested();
                 var correction = EntertainmentCatalogue.CorrectionFor(target, Personal);
                 try
                 {
-                    var metadata = await _discovery.LookupAsync(target, correction, token, index, cancellationToken);
+                    var metadata = await _discovery.LookupAsync(target, correction, token, index, cancellationToken).ConfigureAwait(false);
                     lock (_lock)
                     {
                         _catalogue = _catalogue.Select(t => t.Id == target.Id ? t with { Metadata = metadata } : t).ToList();
@@ -219,7 +243,7 @@ public sealed partial class EntertainmentStore
                 catch (DiscoveryException error) when (error.Kind == DiscoveryErrorKind.Ambiguous)
                 {
                     uncertain++;
-                    await Task.Run(() => index.SaveMetadata("tmdb-attempt|" + target.MetadataCacheKey(correction?.ProviderId), "ambiguous"), cancellationToken);
+                    await Task.Run(() => index.SaveMetadata("tmdb-attempt|" + target.MetadataCacheKey(correction?.ProviderId), "ambiguous"), cancellationToken).ConfigureAwait(false);
                     lock (_lock) _enrichmentIds.Remove(target.Id);
                 }
             }
@@ -229,7 +253,7 @@ public sealed partial class EntertainmentStore
         catch (OperationCanceledException)
         {
         }
-        catch (Exception error) when (error is DiscoveryException or SecretStoreException or LibraryIndexException or Microsoft.Data.Sqlite.SqliteException)
+        catch (Exception error)
         {
             ErrorMessage = error.Message;
         }
@@ -346,7 +370,7 @@ public sealed partial class EntertainmentStore
                     if (collection.TitleIds.Remove(previousId)) collection.TitleIds.Add(nextId);
             }
         });
-        if (changed) await ReloadAsync(cancellationToken);
+        if (changed) await ReloadAsync(cancellationToken).ConfigureAwait(false);
         return changed;
     }
 
@@ -455,14 +479,15 @@ public sealed partial class EntertainmentStore
         {
             archive = JsonSerializer.Deserialize<EntertainmentArchive>(data, SwiftJson.Options);
         }
-        catch (JsonException error)
+        catch (Exception error) when (error is JsonException or NotSupportedException or ArgumentException)
         {
             throw new InvalidImportException("The backup is not a valid Myra personal library file: " + error.Message);
         }
         if (archive is null || archive.Personal is null || archive.Sources is null) throw new InvalidImportException("The backup is incomplete.");
         if (archive.SchemaVersion != 1) throw new InvalidImportException("Unsupported backup version.");
         archive.Personal.Validate();
-        if (archive.Sources.Count > 1000 || archive.Sources.Select(s => s.Id).Distinct().Count() != archive.Sources.Count)
+        if (archive.Sources.Count > 1000 || archive.Sources.Any(s => s is null)
+            || archive.Sources.Select(s => s.Id).Distinct().Count() != archive.Sources.Count)
             throw new InvalidImportException("Invalid or duplicate sources.");
         foreach (var source in archive.Sources)
         {
@@ -481,7 +506,8 @@ public sealed partial class EntertainmentStore
         }
         if (archive.PlayerState is { } state)
         {
-            if (!float.IsFinite(state.Speed) || state.Speed < 0.25f || state.Speed > 4 || state.Markers is null || state.Markers.Count > 100_000)
+            if (!float.IsFinite(state.Speed) || state.Speed < 0.25f || state.Speed > 4 || state.Markers is null || state.Markers.Count > 100_000
+                || state.AudioLanguage is not { Length: > 0 and <= 20 } || state.SubtitleLanguage is not { Length: > 0 and <= 20 })
                 throw new InvalidImportException("Invalid player preferences.");
             foreach (var markers in state.Markers.Values)
                 foreach (var range in new[] { markers?.Intro, markers?.Outro })

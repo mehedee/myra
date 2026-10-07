@@ -59,12 +59,12 @@ public sealed class GlobalSearchService
         var completedSources = new HashSet<Guid>();
         var progress = new GlobalSearchProgress { SourcesTotal = roots.Count };
         var sorted = !matchAllVideos;
-        await update(Snapshot(batchSink is null ? results : [], progress, failures, sorted));
+        await update(Snapshot(batchSink is null ? results : [], progress, failures, sorted)).ConfigureAwait(false);
 
         while (queue.Count > 0)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            if (beforeBatch is not null) await beforeBatch(cancellationToken);
+            if (beforeBatch is not null) await beforeBatch(cancellationToken).ConfigureAwait(false);
             var requested = concurrencyLimit?.Invoke() ?? _maximumConcurrentFolders;
             var count = Math.Min(Math.Max(1, Math.Min(requested, _maximumConcurrentFolders)), queue.Count);
             var batch = Enumerable.Range(0, count).Select(_ => queue.Dequeue()).ToList();
@@ -73,7 +73,7 @@ public sealed class GlobalSearchService
             {
                 try
                 {
-                    var listing = await _listingLoader(folder.Url, folder.Boundary, cancellationToken);
+                    var listing = await _listingLoader(folder.Url, folder.Boundary, cancellationToken).ConfigureAwait(false);
                     return (folder, listing, error: (string?)null);
                 }
                 catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -84,7 +84,7 @@ public sealed class GlobalSearchService
                 {
                     return (folder, listing: (DirectoryListing?)null, error: error.Message);
                 }
-            }));
+            })).ConfigureAwait(false);
 
             foreach (var (folder, listing, error) in outcomes)
             {
@@ -113,7 +113,7 @@ public sealed class GlobalSearchService
                                 results.Add(result);
                                 if (batchSink is not null && results.Count >= 250)
                                 {
-                                    await batchSink(results, cancellationToken);
+                                    await batchSink(results, cancellationToken).ConfigureAwait(false);
                                     results = [];
                                 }
                             }
@@ -131,13 +131,13 @@ public sealed class GlobalSearchService
                 if (outstanding[folder.Root.Id] == 0 && completedSources.Add(folder.Root.Id))
                     progress = progress with { SourcesCompleted = progress.SourcesCompleted + 1 };
                 progress = progress with { MatchesFound = resultIds.Count, FailedSources = failures.Count };
-                await update(Snapshot(batchSink is null ? results : [], progress, failures, sorted));
+                await update(Snapshot(batchSink is null ? results : [], progress, failures, sorted)).ConfigureAwait(false);
             }
         }
 
         if (batchSink is not null && results.Count > 0)
         {
-            await batchSink(results, cancellationToken);
+            await batchSink(results, cancellationToken).ConfigureAwait(false);
             results = [];
         }
         return Snapshot(batchSink is null ? results : [], progress, failures, sorted);

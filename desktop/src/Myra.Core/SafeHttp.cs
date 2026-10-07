@@ -27,7 +27,7 @@ public static class SafeHttp
         for (var hop = 0; ; hop++)
         {
             using var request = build(url);
-            var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+            var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
             var status = (int)response.StatusCode;
             if (status is not (301 or 302 or 303 or 307 or 308) || hop >= maximumRedirects || response.Headers.Location is not { } location)
                 return (response, response.RequestMessage?.RequestUri ?? url);
@@ -43,12 +43,12 @@ public static class SafeHttp
         HttpResponseMessage response, int limit, Func<Exception> oversized, CancellationToken cancellationToken)
     {
         if (response.Content.Headers.ContentLength is { } length && length > limit) throw oversized();
-        await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
+        await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
         using var buffer = new MemoryStream();
         var chunk = new byte[16 * 1024];
         while (true)
         {
-            var read = await stream.ReadAsync(chunk, cancellationToken);
+            var read = await stream.ReadAsync(chunk, cancellationToken).ConfigureAwait(false);
             if (read == 0) break;
             if (buffer.Length + read > limit) throw oversized();
             buffer.Write(chunk, 0, read);
