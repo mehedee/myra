@@ -21,6 +21,9 @@ public static class SecretNames
     public const string OpenSubtitlesApiKey = "opensubtitles.api-key";
     public const string OpenSubtitlesUsername = "opensubtitles.username";
     public const string OpenSubtitlesPassword = "opensubtitles.password";
+    /// Personal AI provider keys. Each provider has its own entry (macOS: com.mehedee.Myra.ai.{provider}).
+    public const string OpenAiApiKey = "ai.openai.api-key";
+    public const string ClaudeApiKey = "ai.claude.api-key";
 }
 
 public sealed class SecretStoreException(string message, Exception? inner = null) : Exception(message, inner);
