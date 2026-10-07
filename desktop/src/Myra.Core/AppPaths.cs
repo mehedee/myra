@@ -60,6 +60,12 @@ public static class AppPaths
     /// Downloaded OpenSubtitles files; app-generated names only, 30 days / 100 MB.
     public static string SubtitleCacheDirectory => Path.Combine(CacheDirectory, "Subtitles");
 
+    /// Myra AI settings: provider, model, consent switches, limits, language, feedback. Never keys.
+    public static string AiSettingsPath => Path.Combine(DataDirectory, "MyraAI.json");
+
+    /// Myra AI daily generation counter (local day and count).
+    public static string AiUsagePath => Path.Combine(DataDirectory, "MyraAIUsage.json");
+
     public static string DefaultDownloadDirectory() => Path.Combine(DownloadsFolder(), "Myra");
 
     private static string DownloadsFolder()
