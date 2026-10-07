@@ -45,6 +45,8 @@ void Save(MainWindow window, string name)
     Console.WriteLine("saved " + name);
 }
 
+if (Environment.GetEnvironmentVariable("MYRA_DIALOGS_ONLY") == "1") return await DialogChecks.StandaloneAsync(root, output);
+
 var work = Dispatcher.UIThread.InvokeAsync(async () =>
 {
     var services = new AppServices();
@@ -346,6 +348,7 @@ var work = Dispatcher.UIThread.InvokeAsync(async () =>
     vm.CycleThemeCommand.Execute(null);
     vm.CycleThemeCommand.Execute(null);
     Save(window, "07-dark.png");
+    await DialogChecks.RunAsync(root, output, Check, Pump);
     window.Close();
 });
 
