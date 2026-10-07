@@ -22,6 +22,9 @@ public static class MyraAppearance
     /// Name of the image in use, for example "cinema-dark". Empty before the first Apply.
     public static string CurrentName { get; private set; } = "";
 
+    /// Raised on the UI thread after the image in use changed (new family, variant or theme).
+    public static event Action? Changed;
+
     /// The icon given to windows now.
     public static WindowIcon? CurrentIcon => _icon;
 
@@ -57,12 +60,14 @@ public static class MyraAppearance
         _settings = settings;
         Hook();
         var name = MyraIcons.AssetName(family, variant, SystemIsDark);
+        var changed = false;
         if (name != CurrentName || _icon is null)
         {
             if (Image(name) is { } bitmap)
             {
                 _icon = new WindowIcon(bitmap);
                 CurrentName = name;
+                changed = true;
             }
             else
             {
@@ -70,6 +75,7 @@ public static class MyraAppearance
             }
         }
         foreach (var window in OpenWindows()) window.Icon = _icon;
+        if (changed) Changed?.Invoke();
     }
 
     /// Windows of the desktop lifetime plus windows seen loading (covers hosts without a lifetime).

@@ -130,7 +130,8 @@
       <Border Grid.Column="1" BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}" BorderThickness="1,0,0,0">
         <ScrollViewer HorizontalScrollBarVisibility="Disabled" x:Name="ResultsScroller">
           <StackPanel Margin="20" Spacing="16">
-            <TextBlock Text="{Binding LocalMessage}" Foreground="Orange" TextWrapping="Wrap" x:Name="LocalMessageText"
+            <!-- Information, not a warning: neutral text. Failures use the orange error box below. -->
+            <TextBlock Text="{Binding LocalMessage}" Foreground="{DynamicResource SystemControlForegroundBaseMediumHighBrush}" TextWrapping="Wrap" x:Name="LocalMessageText"
                        IsVisible="{Binding LocalMessage, Converter={x:Static ObjectConverters.IsNotNull}}" />
 
             <Border Classes="row" Background="#22FFA500" IsVisible="{Binding HasError}" x:Name="ErrorBox">

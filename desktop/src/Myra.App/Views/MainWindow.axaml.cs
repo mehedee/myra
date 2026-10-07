@@ -2,6 +2,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Reactive;
+using Myra.App.Services;
 using Myra.App.ViewModels;
 using Myra.Core;
 
@@ -21,6 +22,16 @@ public partial class MainWindow : Window, IShellWindows
         // The inspector is 460 px wide, capped by the library width; it overlays the browser.
         LibraryArea.GetObservable(BoundsProperty).Subscribe(new AnonymousObserver<Rect>(bounds =>
             InspectorPanel.Width = Math.Max(0, Math.Min(460, bounds.Width))));
+        // The sidebar logo shows the chosen Myra icon and follows later changes (Settings, theme).
+        ShowBrandLogo();
+        MyraAppearance.Changed += ShowBrandLogo;
+        Closed += (_, _) => MyraAppearance.Changed -= ShowBrandLogo;
+    }
+
+    private void ShowBrandLogo()
+    {
+        if (MyraAppearance.CurrentName.Length > 0 && MyraAppearance.Image(MyraAppearance.CurrentName) is { } image)
+            BrandLogo.Source = image;
     }
 
     private MainViewModel? ViewModel => DataContext as MainViewModel;

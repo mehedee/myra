@@ -156,9 +156,13 @@ public static class SubtitleIconChecks
         var tiles = window.GetVisualDescendants().OfType<ToggleButton>().Where(t => t.Name?.StartsWith("IconFamily", StringComparison.Ordinal) == true).ToList();
         check(tiles.Count == 4, "Settings offers four icon families");
 
+        var shell = new MainWindow();
+        var brand = shell.FindControl<Image>("BrandLogo");
         var orbit = tiles.First(t => t.Name == "IconFamilyOrbit");
         Click(orbit);
         await pump(() => false, 200);
+        check(brand?.Source is not null && ReferenceEquals(brand.Source, MyraAppearance.Image("orbit-light")),
+            "the sidebar logo shows the chosen icon family");
         check(settings.IconFamily == "Orbit" && MyraAppearance.CurrentName == "orbit-light", "choosing Orbit applies orbit-light: " + MyraAppearance.CurrentName);
         check(window.Icon is not null && ReferenceEquals(window.Icon, MyraAppearance.CurrentIcon), "the Settings window icon is the chosen icon");
         check(AppStore.Load().Settings.IconFamily == "Orbit", "the family is saved in Myra.json");
@@ -173,6 +177,7 @@ public static class SubtitleIconChecks
         await pump(() => false, 200);
         check(settings.IconVariant == "Glass" && MyraAppearance.CurrentName == "orbit-glass", "choosing Glass applies orbit-glass: " + MyraAppearance.CurrentName);
         check(ReferenceEquals(other.Icon, MyraAppearance.CurrentIcon), "an open window follows the icon change");
+        check(ReferenceEquals(brand?.Source, MyraAppearance.Image("orbit-glass")), "the sidebar logo follows the variant change");
         check(AppStore.Load().Settings.IconVariant == "Glass", "the variant is saved in Myra.json");
         foreach (var family in new[] { "Cinema", "Minimal", "Signature" })
         {
