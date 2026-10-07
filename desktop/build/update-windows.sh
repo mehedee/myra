@@ -17,7 +17,8 @@ NEW=dist/Myra-win-x64
 
 WIN_INSTALL=$(wslpath -w "$INSTALL")
 echo "Closing Myra…"
-powershell.exe -NoProfile -Command "\$p = Get-Process Myra -ErrorAction SilentlyContinue | Where-Object { \$_.Path -like '$WIN_INSTALL*' }; if (\$p) { \$p | ForEach-Object { \$_.CloseMainWindow() | Out-Null }; Start-Sleep 5; \$p | Where-Object { -not \$_.HasExited } | Stop-Process -Force }" || true
+powershell.exe -NoProfile -Command "\$p = Get-Process Myra -ErrorAction SilentlyContinue | Where-Object { \$_.Path -like '$WIN_INSTALL*' }; if (\$p) { \$p | ForEach-Object { \$_.CloseMainWindow() | Out-Null }; \$p | ForEach-Object { \$_.WaitForExit(30000) | Out-Null }; \$p | Where-Object { -not \$_.HasExited } | Stop-Process -Force }" || true
+# Myra can take ~15 s to stop background index work; it is only force-stopped after 30 s.
 # aria2c is started by Myra with --stop-with-process; give it time to exit.
 sleep 2
 
