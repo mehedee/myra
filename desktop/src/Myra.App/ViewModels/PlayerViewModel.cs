@@ -123,7 +123,9 @@ public sealed partial class PlayerViewModel : ObservableObject, IDisposable
     public event Action<GlobalSearchResult>? PlaybackEnded;
 
     /// Resume point saved (macOS onPositionChanged): media, seconds, duration.
-    public event Action<GlobalSearchResult, double, double>? PositionSaved;
+    /// The last argument is true for pause, stop, end of a file and close: write it to disk now.
+    /// Periodic saves during playback pass false.
+    public event Action<GlobalSearchResult, double, double, bool>? PositionSaved;
 
     // ---------- Optional features (null hides the control) ----------
 
@@ -247,8 +249,9 @@ public sealed partial class PlayerViewModel : ObservableObject, IDisposable
             return;
         }
         CancelMenu?.Invoke();
-        if (!_detached) SavePosition();
+        if (!_detached) SavePosition(persist: true);
         _detached = false;
+        var load = ++_loadGeneration;
         _isClosingPlayer = false;
         VersionChoices.Clear();
         Current = result;
@@ -288,7 +291,6 @@ public sealed partial class PlayerViewModel : ObservableObject, IDisposable
         _stall.Reset(Now);
         NoteInteraction();
 
-        var saved = resumeSeconds is null && resume ? _services.Index.PlaybackPosition(result.Entry.Url) : null;
         var startAt = resumeSeconds is { } explicitSeconds && double.IsFinite(explicitSeconds) && explicitSeconds >= 5 ? explicitSeconds : (double?)null;
         var old = _media;
         _media = result.Entry.Url.IsFile
@@ -313,7 +315,27 @@ public sealed partial class PlayerViewModel : ObservableObject, IDisposable
         ApplyDelays();
         _services.IsPlaying = true;
         SetState(PlayerState.Opening);
+        // The saved resume point is read off the UI thread (the index may be busy or unavailable).
         // The prompt appears after the new state is set so it is not cleared by it.
+        if (resumeSeconds is null && resume) _ = ShowSavedResumePointAsync(result.Entry.Url, load);
+    }
+
+    private int _loadGeneration;
+
+    private async Task ShowSavedResumePointAsync(Uri url, int load)
+    {
+        double? saved;
+        try
+        {
+            saved = await Task.Run(() => _services.Index.PlaybackPosition(url));
+        }
+        catch (Exception)
+        {
+            // No index, no resume point: playback continues from the start.
+            return;
+        }
+        if (saved is null || load != _loadGeneration || _detached || IsClosed) return;
+        if (State is PlayerState.Ended or PlayerState.Error) return;
         ResumePosition = saved;
     }
 
@@ -325,13 +347,15 @@ public sealed partial class PlayerViewModel : ObservableObject, IDisposable
         NextCommand.NotifyCanExecuteChanged();
         OnPropertyChanged(nameof(SeekingUnsupported));
         if (state == PlayerState.Playing) RefreshTracks();
+        if (state == PlayerState.Paused) SavePosition(persist: true);
         if (_completion.Observe(state) && state == PlayerState.Ended) OnFinished();
     }
 
     private void OnFinished()
     {
         if (Current is not { } finished) return;
-        _services.Index.SavePlaybackPosition(finished.Entry.Url, Duration, Duration);
+        var (url, duration) = (finished.Entry.Url, Duration);
+        _ = SaveToIndexAsync(url, duration, duration);
         PlaybackEnded?.Invoke(finished);
         if (Repeat)
         {
@@ -376,24 +400,36 @@ public sealed partial class PlayerViewModel : ObservableObject, IDisposable
         if (State == PlayerState.Playing && now - _lastSavedAt > 10) SavePosition();
     }
 
-    private void SavePosition()
+    /// Saves the resume point to the index (off the UI thread) and reports it through PositionSaved.
+    /// wait bounds how long the caller blocks for the index write (used when the player closes).
+    private void SavePosition(bool persist = false, TimeSpan? wait = null)
     {
         _lastSavedAt = Now;
         if (Current is not { } media || Duration <= 0 || Position <= 0 || State == PlayerState.Ended) return;
         var (url, position, duration) = (media.Entry.Url, Position, Duration);
-        PositionSaved?.Invoke(media, position, duration);
-        _ = Task.Run(() =>
+        try
         {
-            try
-            {
-                _services.Index.SavePlaybackPosition(url, position, duration);
-            }
-            catch (Exception)
-            {
-                // Resume points are a convenience; never interrupt playback for them.
-            }
-        });
+            PositionSaved?.Invoke(media, position, duration, persist);
+        }
+        catch (Exception)
+        {
+            // History is a convenience; never interrupt playback for it.
+        }
+        var save = SaveToIndexAsync(url, position, duration);
+        if (wait is { } timeout) save.Wait(timeout);
     }
+
+    /// Resume points are a convenience: index failures are ignored and never reach the UI thread.
+    private Task SaveToIndexAsync(Uri url, double position, double duration) => Task.Run(() =>
+    {
+        try
+        {
+            _services.Index.SavePlaybackPosition(url, position, duration);
+        }
+        catch (Exception)
+        {
+        }
+    });
 
     // ---------- Tracks ----------
 
@@ -865,7 +901,7 @@ public sealed partial class PlayerViewModel : ObservableObject, IDisposable
         if (_isClosingPlayer || _detached) return;
         _isClosingPlayer = true;
         CancelMenu?.Invoke();
-        SavePosition();
+        SavePosition(persist: true);
         StopPlayback();
         if (_fullscreenTransition || IsFullscreen)
         {
@@ -912,7 +948,8 @@ public sealed partial class PlayerViewModel : ObservableObject, IDisposable
     public void Close()
     {
         if (IsClosed) return;
-        if (!_detached) SavePosition();
+        // Synchronous, bounded: the app may close the index right after this.
+        if (!_detached) SavePosition(persist: true, wait: TimeSpan.FromSeconds(2));
         IsClosed = true;
         _detached = true;
         _fullscreenTimeout?.Stop();

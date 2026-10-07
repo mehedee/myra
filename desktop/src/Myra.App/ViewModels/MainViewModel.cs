@@ -57,6 +57,8 @@ public sealed partial class MainViewModel : ObservableObject
         services.IndexRefresh.StateChanged += (_, _) => Dispatcher.UIThread.Post(UpdateIndexState);
         services.IndexRefresh.IndexChanged += (_, _) => Dispatcher.UIThread.Post(OnIndexChanged);
         services.Entertainment.NewEpisodesDetected += (_, e) => Dispatcher.UIThread.Post(() => OnNewEpisodes(e));
+        services.IndexFailed += message => Dispatcher.UIThread.Post(() => IndexStatus = message);
+        if (services.StartupErrors.Count > 0) ErrorMessage = string.Join(" ", services.StartupErrors);
     }
 
     // Set by the view: dialogs and clipboard need a window.
@@ -611,7 +613,12 @@ public sealed partial class MainViewModel : ObservableObject
 
     /// Footer refresh button: due folders, with a completion message.
     [RelayCommand]
-    private void RefreshIndexNow() => RefreshIndex(manual: true);
+    private void RefreshIndexNow()
+    {
+        // A manual refresh also retries an index that failed to open (for example, a locked file).
+        _services.RetryIndex();
+        RefreshIndex(manual: true);
+    }
 
     [RelayCommand] private Task OpenIndexManagementAsync() => WithOwner(owner => Dialogs.ShowIndexManagementAsync(owner));
     [RelayCommand] private void CancelIndexing() => _services.IndexRefresh.Cancel();
@@ -663,6 +670,7 @@ public sealed partial class MainViewModel : ObservableObject
         if (!keepStatus)
             IndexStatus = controller.IsRefreshing
                 ? (controller.IsPaused ? "Indexing paused: " : "Indexing: ") + $"{p.SourcesCompleted}/{p.SourcesTotal} sources • {p.FoldersVisited} folders • {p.MatchesFound} videos"
+                : _services.IndexError is { } indexError ? indexError
                 : controller.LastRefresh is { } last ? $"Index updated {last.ToLocalTime():g}" : "Library index has not been refreshed";
         if (!IndexFailures.SequenceEqual(controller.Failures))
         {
@@ -946,7 +954,20 @@ public sealed partial class MainViewModel : ObservableObject
     }
 
     /// Plays a video given on the command line (an http(s) URL or a local file) in a stand-alone player window.
+    /// Fire-and-forget from startup: every failure becomes an error message instead of an app crash.
     public async void PlayTarget(string target)
+    {
+        try
+        {
+            await PlayTargetAsync(target);
+        }
+        catch (Exception error)
+        {
+            ErrorMessage = $"Cannot play \"{target}\": {error.Message}";
+        }
+    }
+
+    private async Task PlayTargetAsync(string target)
     {
         GlobalSearchResult result;
         PlaybackSequence sequence;
@@ -1001,7 +1022,7 @@ public sealed partial class MainViewModel : ObservableObject
         player.VersionChooser = _hooks;
         player.Notice += ShowToast;
         player.PlaybackEnded += media => Entertainment.MarkPlaybackEnded(media);
-        player.PositionSaved += (media, seconds, duration) => Entertainment.RecordPlayback(media, seconds, duration);
+        player.PositionSaved += (media, seconds, duration, persist) => Entertainment.RecordPlayback(media, seconds, duration, persist: persist);
         player.OnlineSubtitlesRequested += media => _ = FindSubtitlesAsync(player, media);
         return player;
     }

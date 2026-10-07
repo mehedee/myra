@@ -98,7 +98,14 @@ public sealed class ShellPlayerHooks(MainViewModel main) : IPlayerPreferencesHoo
         {
             main.ShowToast(error.Message);
         }
-        if (chosen is not null) player.ChooseVersion(chosen);
-        else player.CancelVersionChoice();
+        try
+        {
+            if (chosen is not null) player.ChooseVersion(chosen);
+            else player.CancelVersionChoice();
+        }
+        catch (Exception error)
+        {
+            main.ShowToast(error.Message);
+        }
     }
 }

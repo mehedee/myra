@@ -29,6 +29,9 @@ public partial class App : Application
             var main = new MainViewModel(services, CreateDialogs(services));
             desktop.MainWindow = new MainWindow { DataContext = main };
             desktop.ShutdownRequested += (_, _) => services.Shutdown();
+            // Closing the main window ends the app without ShutdownRequested on some platforms. Shutdown runs once.
+            desktop.Exit += (_, _) => services.Shutdown();
+            HandleDataErrors(main);
             // Logout, systemd and `kill` send SIGTERM; shut down through the normal path so state is saved.
             _signals =
             [
@@ -46,6 +49,25 @@ public partial class App : Application
             if (desktop.Args?.FirstOrDefault() is { } target) main.PlayTarget(target);
         }
         base.OnFrameworkInitializationCompleted();
+    }
+
+    /// Last line of defence: a failure of the index, a data file or a credential store in a command
+    /// or background task is shown as an error instead of ending the app.
+    private static void HandleDataErrors(MainViewModel main)
+    {
+        static bool IsDataError(Exception error) => error is LibraryIndexException or Microsoft.Data.Sqlite.SqliteException
+            or IOException or UnauthorizedAccessException or InvalidImportException or SecretStoreException;
+
+        Dispatcher.UIThread.UnhandledException += (_, e) =>
+        {
+            if (!IsDataError(e.Exception)) return;
+            e.Handled = true;
+            main.ErrorMessage = e.Exception.Message;
+        };
+        TaskScheduler.UnobservedTaskException += (_, e) =>
+        {
+            if (e.Exception.InnerExceptions.All(IsDataError)) e.SetObserved();
+        };
     }
 
     public static void ApplyTheme(AppThemeMode mode)
