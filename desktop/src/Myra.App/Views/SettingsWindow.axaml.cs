@@ -10,6 +10,8 @@ public partial class SettingsWindow : Window
     private static readonly (IndexingMode Mode, string Label)[] IndexingChoices =
         [(IndexingMode.Balanced, "Balanced"), (IndexingMode.LowImpact, "Low impact")];
 
+    private readonly AppServices? _services;
+
     public SettingsWindow() : this(new AppSettings(), new PlayerPersonalState())
     {
     }
@@ -18,6 +20,7 @@ public partial class SettingsWindow : Window
     {
         InitializeComponent();
         DataContext = settings;
+        _services = services;
         BuildAppearance(settings);
         if (services is not null) BuildServices(services);
 

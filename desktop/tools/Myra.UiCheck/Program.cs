@@ -354,6 +354,7 @@ var work = Dispatcher.UIThread.InvokeAsync(async () =>
     vm.CycleThemeCommand.Execute(null);
     Save(window, "07-dark.png");
     await DialogChecks.RunAsync(root, output, Check, Pump);
+    await SubtitleIconChecks.RunAsync(root, output, Check, Pump);
     window.Close();
 });
 

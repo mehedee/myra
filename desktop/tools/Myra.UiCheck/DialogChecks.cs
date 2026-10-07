@@ -88,7 +88,7 @@ public static class DialogChecks
     {
         var window = await Open(new SettingsWindow(services.Store.Settings, services.PlayerState, services) { Height = 1500 }, "10-settings.png", pump);
         check(HasText(window, "This product uses the TMDB API but is not endorsed or certified by TMDB."), "Settings shows the TMDB notice");
-        check(HasText(window, "Home Discovery") && HasText(window, "Online Subtitles"), "Settings has Home Discovery and Online Subtitles");
+        check(HasText(window, "Home Discovery") && HasText(window, "Free-First Subtitles"), "Settings has Home Discovery and Free-First Subtitles");
         var omdb = Find<TextBox>(window, t => t.Watermark == "OMDb API Key (optional)");
         var save = Find<Button>(window, b => b.Content as string == "Save API Key");
         check(omdb is not null && save is not null, "Settings has OMDb key field");
@@ -201,7 +201,7 @@ public static class DialogChecks
     {
         var window = new OnlineSubtitlesDialog(services, Media("Some.Show.S01E02.720p.mkv"));
         await Open(window, "15-online-subtitles.png", pump, 800);
-        check(HasText(window, "Add your OpenSubtitles.com API key in Settings first"), "missing API key error is explained");
+        check(!HasText(window, "Add your OpenSubtitles.com API key in Settings first"), "opening Find Subtitles does not search or report a missing key");
         check(Find<TextBox>(window, t => t.Text == "Some Show") is not null, "query is prefilled from the file name");
         window.Close();
     }

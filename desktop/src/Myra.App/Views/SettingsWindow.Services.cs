@@ -14,6 +14,12 @@ public partial class SettingsWindow
     private static readonly (AppThemeMode Mode, string Label)[] ThemeChoices =
         [(AppThemeMode.System, "System"), (AppThemeMode.Light, "Light"), (AppThemeMode.Dark, "Dark")];
 
+    private static readonly (string Code, string Label)[] PreferredLanguages =
+        [("en", "English"), ("bn", "Bengali"), ("hi", "Hindi"), ("", "All languages")];
+
+    private static readonly (string Code, string Label)[] FallbackLanguages =
+        [("", "No automatic fallback"), ("en", "English"), ("bn", "Bengali"), ("hi", "Hindi")];
+
     private static TextBox SecretBox(string watermark) =>
         new() { PasswordChar = '•', Watermark = watermark, HorizontalAlignment = HorizontalAlignment.Stretch };
 
@@ -44,6 +50,16 @@ public partial class SettingsWindow
         };
         ServicesPanel.Children.Add(AppDialog.Heading("Appearance"));
         ServicesPanel.Children.Add(LabelRow("Theme", box));
+        BuildIconPicker(settings, () =>
+        {
+            try
+            {
+                _services?.Store.Save();
+            }
+            catch (IOException)
+            {
+            }
+        });
     }
 
     internal static void ApplyTheme(AppThemeMode mode) => App.ApplyTheme(mode);
@@ -208,14 +224,26 @@ public partial class SettingsWindow
                 UpdateSignIn();
             }
         };
-        panel.Add(AppDialog.Heading("Online Subtitles — OpenSubtitles.com"));
+        panel.Add(AppDialog.Heading("Free-First Subtitles — Optional OpenSubtitles Account"));
+        var settings = services.Store.Settings;
+        var preferred = new ComboBox { HorizontalAlignment = HorizontalAlignment.Stretch, ItemsSource = PreferredLanguages.Select(l => l.Label).ToList() };
+        preferred.SelectedIndex = Math.Max(0, Array.FindIndex(PreferredLanguages, l => l.Code == settings.SubtitlePreferredLanguage));
+        preferred.SelectionChanged += (_, _) => settings.SubtitlePreferredLanguage = PreferredLanguages[Math.Max(0, preferred.SelectedIndex)].Code;
+        var fallback = new ComboBox { HorizontalAlignment = HorizontalAlignment.Stretch, ItemsSource = FallbackLanguages.Select(l => l.Label).ToList() };
+        fallback.SelectedIndex = Math.Max(0, Array.FindIndex(FallbackLanguages, l => l.Code == settings.SubtitleFallbackLanguage));
+        fallback.SelectionChanged += (_, _) => settings.SubtitleFallbackLanguage = FallbackLanguages[Math.Max(0, fallback.SelectedIndex)].Code;
+        panel.Add(LabelRow("Preferred language", preferred));
+        panel.Add(LabelRow("Fallback language", fallback));
         panel.Add(apiKey);
         panel.Add(user);
         panel.Add(password);
         panel.Add(Buttons(saveSubtitles, signIn, progress));
         panel.Add(AppDialog.LinkButton("Get an OpenSubtitles API Key", "https://www.opensubtitles.com/en/consumers"));
-        panel.Add(AppDialog.Muted("Separate from OMDb. An API key is required; account sign-in is optional and may provide a different download allowance. No automatic subtitle downloads."));
+        panel.Add(AppDialog.Muted("No paid subscription is required by Myra. Embedded tracks, nearby files, cached downloads and manual import work without this API. "
+            + "A consumer API key is required for online search; your provider account decides the actual allowance. Separate from OMDb. No automatic subtitle downloads."));
         panel.Add(subtitleStatus);
+
+        BuildAiSection(services);
 
         // Licence and attribution
         panel.Add(AppDialog.Heading("About Myra " + AboutAttribution.Version));
