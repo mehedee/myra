@@ -122,7 +122,7 @@ public static class DialogChecks
     {
         var window = await Open(new IndexManagementWindow(services), "11-index-management.png", pump, 1200);
         var tree = window.FindControl<TreeView>("Tree")!;
-        check(tree.ItemCount == 1, "Index Management lists the source root");
+        check(tree.ItemCount >= 1 && tree.ItemCount == services.Store.Categories.Count, $"Index Management lists one root per source ({tree.ItemCount})");
         var selected = window.FindControl<Button>("RefreshSelectedButton")!;
         check(!selected.IsEnabled, "Refresh selected is disabled with no selection");
         if (tree.Items.FirstOrDefault() is Myra.App.ViewModels.IndexNode root)

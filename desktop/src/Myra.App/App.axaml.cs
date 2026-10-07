@@ -17,9 +17,8 @@ public partial class App : Application
 
     public override void Initialize() => AvaloniaXamlLoader.Load(this);
 
-    /// Builds the secondary windows and dialogs. Switch to the real implementation in one place:
-    /// <c>services => new AppDialogs(services)</c>.
-    public static Func<AppServices, IAppDialogs> CreateDialogs { get; set; } = _ => new NullAppDialogs();
+    /// Builds the secondary windows and dialogs. Checks can replace it with <see cref="NullAppDialogs"/>.
+    public static Func<AppServices, IAppDialogs> CreateDialogs { get; set; } = services => new AppDialogs(services);
 
     public override void OnFrameworkInitializationCompleted()
     {

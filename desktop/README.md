@@ -34,7 +34,12 @@ x86-64. Runs under X11, and under Wayland through XWayland.
 | Embedded player (libVLC): resume, English audio/subtitle defaults, natural-order auto-next, repeat, speed, subtitle files, fullscreen, keyboard | Ported |
 | Open in external VLC, copy link, reveal in Explorer, light/dark theme | Ported |
 | `Myra.exe <url-or-file>` plays a video directly | New |
-| OMDb/TMDB metadata, OpenSubtitles search, Home/Watchlist/Collections, export/import | Not ported yet |
+| Home (shelves, filters, Pick Something), Details, Watchlist/Collections, followed shows | Ported |
+| OMDb/TMDB metadata, Correct Match, OpenSubtitles search, release versions and chooser | Ported |
+| Index Management (daily/weekly/manual schedules, staged refresh, full rescan), schema v3 index | Ported |
+| Offline Library, Personal Library export/import (macOS-compatible JSON), playback preferences, intro/outro markers | Ported |
+| API keys | Stored with DPAPI on Windows (Keychain on macOS), 0600 file on Linux |
+| Followed-show notifications | In-app toast on Windows, `notify-send` on Linux |
 | "Play on Sam Online" (Apple Shortcuts) | Dropped (macOS only) |
 
 ## Layout
@@ -46,6 +51,11 @@ tests/             xUnit tests for Myra.Core, plus end-to-end media and listing-
 tools/Myra.UiCheck  Headless end-to-end checks against a live listing server, real aria2 and real libVLC
 build/             Windows and Linux packaging, Linux installer, packaged-app smoke test
 ```
+
+## Update an installed copy (from WSL)
+
+`./build/update-windows.sh [install-dir]` builds the zip, closes Myra, keeps the old folder as `<install-dir>.previous`, copies the new build in and starts it again.
+The first start migrates the index to schema v3 and keeps `LibraryIndex.sqlite.v2-backup`; older builds cannot open a v3 index, so restore that backup before rolling back.
 
 ## Build
 
@@ -88,6 +98,9 @@ systems.
 | Sources, downloads, settings | `%APPDATA%\Myra\Myra.json` | `~/.config/Myra/Myra.json` |
 | Search index, resume points | `%APPDATA%\Myra\LibraryIndex.sqlite` | `~/.config/Myra/LibraryIndex.sqlite` |
 | Player preferences | `%APPDATA%\Myra\PlayerPreferences.json` | `~/.config/Myra/PlayerPreferences.json` |
+| Personal library, folder schedules | `%APPDATA%\Myra\EntertainmentPersonal.json`, `IndexPolicies.json` | `~/.config/Myra/` |
+| API keys | `%APPDATA%\Myra\Secrets\` | `~/.config/Myra/Secrets/` |
+| Subtitle cache | `%LOCALAPPDATA%\Myra\Cache\Subtitles` | `~/.cache/Myra/Subtitles` |
 | Downloads (default) | `Downloads\Myra` | `~/Downloads/Myra` |
 
 ## Upgrade an existing desktop profile
