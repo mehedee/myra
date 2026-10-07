@@ -26,7 +26,9 @@ public sealed class GlobalSearchService
         bool matchAllVideos = false,
         Func<List<GlobalSearchResult>, CancellationToken, Task>? batchSink = null,
         Func<int>? concurrencyLimit = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        IReadOnlyList<IndexScope>? scopes = null,
+        Func<CancellationToken, Task>? beforeBatch = null)
     {
         var query = rawQuery.Trim();
         if (!matchAllVideos && query.Length < 3) throw new GlobalSearchException(GlobalSearchErrorKind.QueryTooShort);
@@ -35,12 +37,20 @@ public sealed class GlobalSearchService
         var queue = new Queue<Folder>();
         var visited = new HashSet<(Guid, string)>();
         var outstanding = new Dictionary<Guid, int>();
-        foreach (var root in roots)
+        // Scopes start below the root; relative paths stay root-relative.
+        foreach (var scope in scopes ?? roots.Select(IndexScope.ForRoot).ToList())
         {
-            var boundary = new UrlBoundary(root.Url);
-            queue.Enqueue(new Folder(root, boundary, boundary.Root, []));
-            visited.Add((root.Id, boundary.Root.AbsoluteUri));
-            outstanding[root.Id] = 1;
+            var boundary = new UrlBoundary(scope.Root.Url) { SourceId = scope.Root.Id };
+            var start = scope.Folder.SameAs(scope.Root.Url) ? boundary.Root : scope.Folder.StandardizedDirectoryUrl();
+            if (!boundary.Contains(start)) throw new DirectoryException(DirectoryErrorKind.OutsideCategoryRoot);
+            var rootPath = Uri.UnescapeDataString(boundary.Root.AbsolutePath);
+            var folderPath = Uri.UnescapeDataString(start.AbsolutePath);
+            var relative = folderPath.Length > rootPath.Length
+                ? folderPath[rootPath.Length..].Split('/', StringSplitOptions.RemoveEmptyEntries)
+                : [];
+            if (!visited.Add((scope.Root.Id, start.AbsoluteUri))) continue;
+            queue.Enqueue(new Folder(scope.Root, boundary, start, relative));
+            outstanding[scope.Root.Id] = outstanding.GetValueOrDefault(scope.Root.Id) + 1;
         }
 
         var results = new List<GlobalSearchResult>();
@@ -54,6 +64,7 @@ public sealed class GlobalSearchService
         while (queue.Count > 0)
         {
             cancellationToken.ThrowIfCancellationRequested();
+            if (beforeBatch is not null) await beforeBatch(cancellationToken);
             var requested = concurrencyLimit?.Invoke() ?? _maximumConcurrentFolders;
             var count = Math.Min(Math.Max(1, Math.Min(requested, _maximumConcurrentFolders)), queue.Count);
             var batch = Enumerable.Range(0, count).Select(_ => queue.Dequeue()).ToList();

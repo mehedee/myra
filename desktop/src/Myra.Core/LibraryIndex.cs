@@ -2,32 +2,90 @@ using Microsoft.Data.Sqlite;
 
 namespace Myra.Core;
 
-/// Persistent video index for Global search, plus playback positions and a metadata cache.
-/// All access goes through one connection guarded by a lock; callers run it off the UI thread.
+public sealed class LibraryIndexException(string message, Exception? inner = null) : Exception("Library index: " + message, inner);
+
+/// Persistent video index for Global search and Home, plus playback positions, a metadata cache,
+/// per-folder snapshots and a catalogue revision. All access goes through one connection guarded
+/// by a lock; callers run it off the UI thread.
+///
+/// Schema history (shared with macOS): v1 videos/playback; v2 adds videos.first_discovered;
+/// v3 adds folders (directory snapshots) and index_state (catalogue revision). An older index is
+/// backed up with the SQLite backup API to "{path}.v{N}-backup" before it is migrated in place.
 public sealed class LibraryIndex : IDisposable
 {
+    public const int SchemaVersion = 3;
+
     private readonly SqliteConnection _connection;
     private readonly Lock _lock = new();
     private readonly bool _hasTrigram;
 
-    public LibraryIndex(string path)
+    public LibraryIndex(string path, bool searchable = true)
     {
-        Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(path))!);
-        _connection = new SqliteConnection(new SqliteConnectionStringBuilder
+        Path = System.IO.Path.GetFullPath(path);
+        var directory = System.IO.Path.GetDirectoryName(Path)!;
+        if (OperatingSystem.IsWindows()) Directory.CreateDirectory(directory);
+        else Directory.CreateDirectory(directory, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+        _connection = Open(Path);
+        try
+        {
+            Execute("PRAGMA busy_timeout=3000");
+            var version = Convert.ToInt32(Scalar("PRAGMA user_version"));
+            if (version > SchemaVersion) throw new LibraryIndexException("This index was created by a newer Myra version.");
+            if (version is > 0 and < SchemaVersion) Backup(version);
+            _hasTrigram = Migrate(searchable);
+        }
+        catch
+        {
+            _connection.Dispose();
+            throw;
+        }
+    }
+
+    /// Absolute path of the SQLite file. The saved Home snapshot lives beside it ("{Path}.home-cache").
+    public string Path { get; }
+
+    public bool UsesTrigramSearch => _hasTrigram;
+
+    private static SqliteConnection Open(string path)
+    {
+        var connection = new SqliteConnection(new SqliteConnectionStringBuilder
         {
             DataSource = path,
             Mode = SqliteOpenMode.ReadWriteCreate,
             Pooling = false,
         }.ToString());
-        _connection.Open();
-        Execute("PRAGMA busy_timeout=3000");
+        connection.Open();
+        return connection;
+    }
 
-        var version = Convert.ToInt32(Scalar("PRAGMA user_version"));
-        if (version > 2) throw new InvalidOperationException("This index was created by a newer Myra version.");
+    /// Backup includes committed WAL pages, unlike copying the database file. An existing backup is kept.
+    private void Backup(int version)
+    {
+        var backupPath = Path + $".v{version}-backup";
+        if (File.Exists(backupPath)) return;
+        try
+        {
+            using var destination = Open(backupPath);
+            _connection.BackupDatabase(destination);
+        }
+        catch (Exception error)
+        {
+            try
+            {
+                File.Delete(backupPath);
+            }
+            catch (IOException)
+            {
+            }
+            throw new LibraryIndexException("Index backup failed; migration was not performed.", error);
+        }
+    }
+
+    private bool Migrate(bool searchable)
+    {
         var ftsExisted = Scalar("SELECT 1 FROM sqlite_master WHERE name='video_fts'") is not null;
-
+        Execute("PRAGMA journal_mode=WAL");
         Execute("""
-            PRAGMA journal_mode=WAL;
             CREATE TABLE IF NOT EXISTS videos (
               category TEXT NOT NULL, root TEXT NOT NULL, category_name TEXT NOT NULL,
               url TEXT NOT NULL, name TEXT NOT NULL, search_name TEXT NOT NULL,
@@ -40,9 +98,33 @@ public sealed class LibraryIndex : IDisposable
               cache_key TEXT PRIMARY KEY, payload TEXT NOT NULL, fetched REAL NOT NULL);
             CREATE TABLE IF NOT EXISTS playback (
               url TEXT PRIMARY KEY, seconds REAL NOT NULL, duration REAL NOT NULL, updated REAL NOT NULL);
-            PRAGMA user_version=2;
             """);
 
+        var hasFirstDiscovered = Convert.ToInt64(Scalar(
+            "SELECT COUNT(*) FROM pragma_table_info('videos') WHERE name='first_discovered'")) > 0;
+        Transaction(() =>
+        {
+            // v2: durable first-discovery dates. Older rows take their source's last scan time.
+            if (!hasFirstDiscovered)
+            {
+                Execute("ALTER TABLE videos ADD COLUMN first_discovered REAL NOT NULL DEFAULT 0");
+                Execute("""
+                    UPDATE videos SET first_discovered=COALESCE(
+                      (SELECT completed FROM source_scans WHERE source_scans.category=videos.category),
+                      CAST(strftime('%s','now') AS REAL))
+                    """);
+            }
+            // v3: folder snapshots and a revision that invalidates the saved Home snapshot.
+            Execute("""
+                CREATE TABLE IF NOT EXISTS folders(category TEXT NOT NULL, root TEXT NOT NULL,
+                  url TEXT NOT NULL, payload TEXT NOT NULL, checked REAL NOT NULL, PRIMARY KEY(category,url));
+                CREATE TABLE IF NOT EXISTS index_state(id INTEGER PRIMARY KEY CHECK(id=1), revision INTEGER NOT NULL);
+                INSERT OR IGNORE INTO index_state VALUES(1,0);
+                """);
+            Execute($"PRAGMA user_version={SchemaVersion}");
+        });
+
+        if (!searchable) return false;
         // Fall back to literal substring matching when the SQLite build lacks the trigram tokenizer.
         try
         {
@@ -59,26 +141,32 @@ public sealed class LibraryIndex : IDisposable
                     VALUES('delete',old.rowid,old.search_name);
                   INSERT INTO video_fts(rowid,search_name) VALUES(new.rowid,new.search_name); END;
                 """);
-            _hasTrigram = true;
             if (!ftsExisted) Execute("INSERT INTO video_fts(video_fts) VALUES('rebuild')");
+            return true;
         }
         catch (SqliteException)
         {
-            _hasTrigram = false;
+            return false;
         }
     }
 
-    public bool UsesTrigramSearch => _hasTrigram;
-
     public static string Normalized(string value) => value.ToLowerInvariant();
 
-    private static double Now() => DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() / 1000.0;
+    private static double Now() => ToUnix(DateTimeOffset.UtcNow);
 
+    internal static double ToUnix(DateTimeOffset value) => value.ToUnixTimeMilliseconds() / 1000.0;
+
+    internal static DateTimeOffset FromUnix(double seconds) =>
+        DateTimeOffset.FromUnixTimeMilliseconds((long)(seconds * 1000)).ToLocalTime();
+
+    private static string SourceKey(Guid id) => id.ToString();
+
+    /// Removes deleted sources and records whose root changed, and renames sources. Bumps the revision on change.
     public void SynchronizeSources(IReadOnlyList<GlobalSearchRoot> roots)
     {
         lock (_lock)
         {
-            var active = roots.Select(r => r.Id.ToString()).ToHashSet();
+            var active = roots.Select(r => SourceKey(r.Id)).ToHashSet();
             var obsolete = new List<string>();
             using (var command = Command("SELECT DISTINCT category FROM videos UNION SELECT category FROM source_scans"))
             using (var reader = command.ExecuteReader())
@@ -87,30 +175,38 @@ public sealed class LibraryIndex : IDisposable
 
             Transaction(() =>
             {
+                var changed = obsolete.Count > 0 || roots.Any(root => Convert.ToInt64(Scalar(
+                    "SELECT COUNT(*) FROM videos WHERE category=$a AND (root<>$b OR category_name<>$c)",
+                    SourceKey(root.Id), root.Url.AbsoluteUri, root.Name)) > 0);
+                if (changed) BumpRevision();
                 foreach (var id in obsolete)
                 {
                     Execute("DELETE FROM videos WHERE category=$a", id);
                     Execute("DELETE FROM source_scans WHERE category=$a", id);
+                    Execute("DELETE FROM folders WHERE category=$a", id);
                 }
                 foreach (var root in roots)
                 {
-                    Execute("DELETE FROM videos WHERE category=$a AND root<>$b", root.Id.ToString(), root.Url.AbsoluteUri);
-                    Execute("DELETE FROM source_scans WHERE category=$a AND root<>$b", root.Id.ToString(), root.Url.AbsoluteUri);
-                    Execute("UPDATE videos SET category_name=$a WHERE category=$b AND category_name<>$a", root.Name, root.Id.ToString());
+                    var id = SourceKey(root.Id);
+                    Execute("DELETE FROM folders WHERE category=$a AND root<>$b", id, root.Url.AbsoluteUri);
+                    Execute("DELETE FROM videos WHERE category=$a AND root<>$b", id, root.Url.AbsoluteUri);
+                    Execute("DELETE FROM source_scans WHERE category=$a AND root<>$b", id, root.Url.AbsoluteUri);
+                    Execute("UPDATE videos SET category_name=$a WHERE category=$b AND category_name<>$a", root.Name, id);
                 }
             });
         }
     }
 
+    /// True when any source has no completed scan, or its last scan is at least 24 hours old.
     public bool NeedsRefresh(IReadOnlyList<GlobalSearchRoot> roots, DateTimeOffset? now = null)
     {
-        var current = (now ?? DateTimeOffset.UtcNow).ToUnixTimeMilliseconds() / 1000.0;
+        var current = ToUnix(now ?? DateTimeOffset.UtcNow);
         lock (_lock)
         {
             foreach (var root in roots)
             {
                 var completed = Scalar("SELECT completed FROM source_scans WHERE category=$a AND root=$b",
-                    root.Id.ToString(), root.Url.AbsoluteUri);
+                    SourceKey(root.Id), root.Url.AbsoluteUri);
                 if (completed is null || current - Convert.ToDouble(completed) >= 86400) return true;
             }
             return false;
@@ -131,8 +227,17 @@ public sealed class LibraryIndex : IDisposable
         lock (_lock) return Convert.ToInt64(Scalar("SELECT COUNT(*) FROM videos"));
     }
 
-    public void Upsert(IReadOnlyList<GlobalSearchResult> results, Guid generation)
+    /// Monotonic catalogue revision. Any published content, source or metadata change increments it.
+    public long Revision()
     {
+        lock (_lock) return Convert.ToInt64(Scalar("SELECT revision FROM index_state WHERE id=1"));
+    }
+
+    private void BumpRevision() => Execute("UPDATE index_state SET revision=revision+1 WHERE id=1");
+
+    public void Upsert(IReadOnlyList<GlobalSearchResult> results, Guid generation, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
         if (results.Count == 0) return;
         lock (_lock)
         {
@@ -149,37 +254,167 @@ public sealed class LibraryIndex : IDisposable
                     """);
                 var parameters = Enumerable.Range(1, 12).Select(i => command.Parameters.Add($"$p{i}", SqliteType.Text)).ToArray();
                 command.Prepare();
+                BumpRevision();
                 foreach (var result in results)
                 {
+                    cancellationToken.ThrowIfCancellationRequested();
                     var boundary = new UrlBoundary(result.CategoryRoot);
                     if (!MediaFileType.IsVideo(result.Entry) || !boundary.Contains(result.Entry.Url)
                         || result.RelativePath.Split('/').Contains(".."))
                         throw new DirectoryException(DirectoryErrorKind.OutsideCategoryRoot);
                     object?[] values =
                     [
-                        result.CategoryId.ToString(), result.CategoryRoot.AbsoluteUri, result.CategoryName,
+                        SourceKey(result.CategoryId), result.CategoryRoot.AbsoluteUri, result.CategoryName,
                         result.Entry.Url.AbsoluteUri, result.Entry.Name, Normalized(result.Entry.Name),
                         result.RelativePath, result.ArtworkUrl?.AbsoluteUri, result.Entry.Size,
-                        result.Entry.ModifiedAt?.ToUnixTimeMilliseconds() / 1000.0, generation.ToString(), Now(),
+                        result.Entry.ModifiedAt is { } modified ? ToUnix(modified) : null, generation.ToString(), Now(),
                     ];
                     for (var i = 0; i < values.Length; i++) parameters[i].Value = values[i] ?? DBNull.Value;
                     command.ExecuteNonQuery();
                 }
-            });
+            }, cancellationToken);
         }
     }
 
+    /// Legacy whole-source completion: prunes rows from older generations and records the scan time.
     public void CompleteSource(GlobalSearchRoot root, Guid generation, DateTimeOffset? now = null)
     {
         lock (_lock)
         {
             Transaction(() =>
             {
-                Execute("DELETE FROM videos WHERE category=$a AND generation<>$b", root.Id.ToString(), generation.ToString());
+                Execute("DELETE FROM videos WHERE category=$a AND generation<>$b", SourceKey(root.Id), generation.ToString());
                 Execute("INSERT OR REPLACE INTO source_scans VALUES($a,$b,$c)",
-                    root.Id.ToString(), root.Url.AbsoluteUri, (now ?? DateTimeOffset.UtcNow).ToUnixTimeMilliseconds() / 1000.0);
+                    SourceKey(root.Id), root.Url.AbsoluteUri, ToUnix(now ?? DateTimeOffset.UtcNow));
+                BumpRevision();
             });
         }
+    }
+
+    public IndexedFolder? Folder(IndexScope scope)
+    {
+        lock (_lock)
+        {
+            var payload = Scalar("SELECT payload FROM folders WHERE category=$a AND root=$b AND url=$c",
+                SourceKey(scope.Root.Id), scope.Root.Url.AbsoluteUri, scope.Folder.AbsoluteUri);
+            return payload is string json ? IndexedFolder.Deserialize(json) : null;
+        }
+    }
+
+    public void SaveFolder(IndexedFolder value, IndexScope scope)
+    {
+        lock (_lock)
+            Execute("INSERT OR REPLACE INTO folders VALUES($a,$b,$c,$d,$e)",
+                SourceKey(scope.Root.Id), scope.Root.Url.AbsoluteUri, scope.Folder.AbsoluteUri, value.Serialize(), ToUnix(value.Checked));
+    }
+
+    /// Folder tree for Index Management. Existing indexes without snapshots infer folders from file paths,
+    /// so the tree is available immediately after migration. File counts include descendants.
+    public List<IndexFolderRow> FolderRows(IReadOnlyList<GlobalSearchRoot> roots)
+    {
+        var rows = new List<IndexFolderRow>();
+        lock (_lock)
+        {
+            foreach (var root in roots)
+            {
+                var boundary = new UrlBoundary(root.Url);
+                var id = SourceKey(root.Id);
+                var completed = Scalar("SELECT completed FROM source_scans WHERE category=$a AND root=$b", id, root.Url.AbsoluteUri);
+                DateTimeOffset? sourceDate = completed is null or DBNull ? null : FromUnix(Convert.ToDouble(completed));
+                var sourceRows = new Dictionary<string, (IndexScope Scope, DateTimeOffset? Checked)>();
+                using (var command = Command("SELECT url,checked FROM folders WHERE category=$a AND root=$b ORDER BY url", id, root.Url.AbsoluteUri))
+                using (var reader = command.ExecuteReader())
+                {
+                    while (reader.Read())
+                    {
+                        if (!Uri.TryCreate(reader.GetString(0), UriKind.Absolute, out var url) || !boundary.Contains(url)) continue;
+                        var scope = new IndexScope(root, url);
+                        sourceRows[scope.Prefix] = (scope, FromUnix(reader.GetDouble(1)));
+                    }
+                }
+                var rootScope = IndexScope.ForRoot(root);
+                sourceRows.TryAdd(rootScope.Prefix, (rootScope, sourceDate));
+
+                var counts = new Dictionary<string, int>();
+                var rootPath = boundary.Root.AbsolutePath.TrimEnd('/');
+                using (var command = Command("SELECT url FROM videos WHERE category=$a AND root=$b", id, root.Url.AbsoluteUri))
+                using (var reader = command.ExecuteReader())
+                {
+                    while (reader.Read())
+                    {
+                        if (!Uri.TryCreate(reader.GetString(0), UriKind.Absolute, out var url)) continue;
+                        var folder = url.Parent();
+                        while (boundary.Contains(folder))
+                        {
+                            var atRoot = folder.AbsolutePath.TrimEnd('/') == rootPath;
+                            var scope = atRoot ? rootScope : new IndexScope(root, folder);
+                            counts[scope.Prefix] = counts.GetValueOrDefault(scope.Prefix) + 1;
+                            sourceRows.TryAdd(scope.Prefix, (scope, sourceDate));
+                            if (atRoot) break;
+                            var parent = folder.Parent();
+                            if (parent.AbsolutePath == folder.AbsolutePath) break;
+                            folder = parent;
+                        }
+                    }
+                }
+                foreach (var (prefix, row) in sourceRows)
+                    rows.Add(new IndexFolderRow(row.Scope, row.Checked, counts.GetValueOrDefault(prefix)));
+            }
+        }
+        return rows.OrderBy(r => r.Scope.Folder.AbsoluteUri, StringComparer.Ordinal).ToList();
+    }
+
+    /// Promotes completed scopes from a staging index in one transaction. Identical rows are not
+    /// rewritten, first-discovery dates are preserved, and the revision changes only when content changed.
+    public IndexRefreshSummary Publish(string stagingPath, IReadOnlyList<IndexScope> scopes, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var summary = new IndexRefreshSummary();
+        lock (_lock)
+        {
+            Execute("ATTACH DATABASE $a AS incoming", stagingPath);
+            try
+            {
+                Transaction(() =>
+                {
+                    foreach (var scope in IndexScope.Compact(scopes))
+                    {
+                        cancellationToken.ThrowIfCancellationRequested();
+                        object?[] values = [SourceKey(scope.Root.Id), scope.Root.Url.AbsoluteUri, scope.Prefix.Length, scope.Prefix];
+                        const string selected = "category=$a AND root=$b AND substr(url,1,$c)=$d";
+                        const string differs = "a.root IS NOT s.root OR a.category_name IS NOT s.category_name OR a.name IS NOT s.name "
+                            + "OR a.relative_path IS NOT s.relative_path OR a.artwork IS NOT s.artwork OR a.size IS NOT s.size "
+                            + "OR a.modified IS NOT s.modified";
+                        summary.Added += Count($"SELECT COUNT(*) FROM incoming.videos s WHERE {selected} AND NOT EXISTS(SELECT 1 FROM main.videos a WHERE a.category=s.category AND a.url=s.url)", values);
+                        summary.Changed += Count($"SELECT COUNT(*) FROM incoming.videos s WHERE {selected} AND EXISTS(SELECT 1 FROM main.videos a WHERE a.category=s.category AND a.url=s.url AND ({differs}))", values);
+                        summary.Removed += Count($"SELECT COUNT(*) FROM main.videos a WHERE {selected} AND NOT EXISTS(SELECT 1 FROM incoming.videos s WHERE s.category=a.category AND s.url=a.url)", values);
+                        Execute($"""
+                            INSERT INTO main.videos SELECT * FROM incoming.videos WHERE {selected}
+                            ON CONFLICT(category,url) DO UPDATE SET root=excluded.root,category_name=excluded.category_name,
+                            name=excluded.name,search_name=excluded.search_name,relative_path=excluded.relative_path,
+                            artwork=excluded.artwork,size=excluded.size,modified=excluded.modified,generation=excluded.generation
+                            WHERE videos.root IS NOT excluded.root OR videos.category_name IS NOT excluded.category_name
+                            OR videos.name IS NOT excluded.name OR videos.relative_path IS NOT excluded.relative_path
+                            OR videos.artwork IS NOT excluded.artwork OR videos.size IS NOT excluded.size OR videos.modified IS NOT excluded.modified
+                            """, values);
+                        Execute($"DELETE FROM main.videos WHERE {selected} AND NOT EXISTS(SELECT 1 FROM incoming.videos s WHERE s.category=main.videos.category AND s.url=main.videos.url)", values);
+
+                        const string folderSelected = "category=$a AND root=$b AND (url=$c OR substr(url,1,$d)=$e)";
+                        object?[] folderValues = [SourceKey(scope.Root.Id), scope.Root.Url.AbsoluteUri, scope.Folder.AbsoluteUri, scope.Prefix.Length, scope.Prefix];
+                        Execute($"DELETE FROM main.folders WHERE {folderSelected}", folderValues);
+                        Execute($"INSERT INTO main.folders SELECT * FROM incoming.folders WHERE {folderSelected}", folderValues);
+                        if (scope.Folder.SameAs(scope.Root.Url))
+                            Execute("INSERT OR REPLACE INTO source_scans VALUES($a,$b,$c)", SourceKey(scope.Root.Id), scope.Root.Url.AbsoluteUri, Now());
+                    }
+                    if (summary.Added + summary.Changed + summary.Removed > 0) BumpRevision();
+                }, cancellationToken);
+            }
+            finally
+            {
+                Execute("DETACH DATABASE incoming");
+            }
+        }
+        return summary;
     }
 
     public List<GlobalSearchResult> Search(string rawQuery, int limit = 500, int offset = 0)
@@ -198,41 +433,67 @@ public sealed class LibraryIndex : IDisposable
                 SELECT category,category_name,root,videos.url,name,relative_path,artwork,size,modified
                 FROM {source} WHERE {predicate} ORDER BY category_name,name,videos.url LIMIT $b OFFSET $c
                 """, term, Math.Clamp(limit, 1, 500), Math.Max(0, offset));
-            return ReadResults(command);
+            var results = new List<GlobalSearchResult>();
+            using var reader = command.ExecuteReader();
+            while (reader.Read())
+                if (ReadResult(reader) is { } result) results.Add(result);
+            return results;
         }
     }
 
-    private static List<GlobalSearchResult> ReadResults(SqliteCommand command)
+    /// Every indexed video with its first-discovery date and playback progress, for the Home catalogue.
+    public List<EntertainmentVersion> Inventory(CancellationToken cancellationToken = default)
     {
-        var results = new List<GlobalSearchResult>();
-        using var reader = command.ExecuteReader();
-        while (reader.Read())
+        lock (_lock)
         {
-            if (!Guid.TryParse(reader.GetString(0), out var category)
-                || !Uri.TryCreate(reader.GetString(2), UriKind.Absolute, out var root)
-                || !Uri.TryCreate(reader.GetString(3), UriKind.Absolute, out var url))
-                continue;
-            try
+            using var command = Command("""
+                SELECT category,category_name,root,videos.url,name,relative_path,artwork,size,modified,
+                  first_discovered,COALESCE(playback.seconds,0),COALESCE(playback.duration,0),playback.updated
+                FROM videos LEFT JOIN playback ON playback.url=videos.url ORDER BY category_name,name
+                """);
+            var versions = new List<EntertainmentVersion>();
+            using var reader = command.ExecuteReader();
+            while (reader.Read())
             {
-                if (!new UrlBoundary(root).Contains(url)) continue;
+                cancellationToken.ThrowIfCancellationRequested();
+                if (ReadResult(reader) is not { } media) continue;
+                versions.Add(new EntertainmentVersion(media, FromUnix(reader.GetDouble(9)))
+                {
+                    ProgressSeconds = reader.GetDouble(10),
+                    Duration = reader.GetDouble(11),
+                    LastPlayed = reader.IsDBNull(12) ? null : FromUnix(reader.GetDouble(12)),
+                });
             }
-            catch (DirectoryException)
-            {
-                continue;
-            }
-            var entry = new DirectoryEntry(
-                reader.GetString(4), url, EntryKind.File,
-                reader.IsDBNull(7) ? null : reader.GetInt64(7),
-                reader.IsDBNull(8) ? null : FromUnix(reader.GetDouble(8)));
-            Uri? artwork = reader.IsDBNull(6) ? null : Uri.TryCreate(reader.GetString(6), UriKind.Absolute, out var a) ? a : null;
-            results.Add(new GlobalSearchResult(category, reader.GetString(1), root, entry, reader.GetString(5), artwork));
+            return versions;
         }
-        return results;
     }
 
+    private static GlobalSearchResult? ReadResult(SqliteDataReader reader)
+    {
+        if (!Guid.TryParse(reader.GetString(0), out var category)
+            || !Uri.TryCreate(reader.GetString(2), UriKind.Absolute, out var root)
+            || !Uri.TryCreate(reader.GetString(3), UriKind.Absolute, out var url))
+            return null;
+        try
+        {
+            if (!new UrlBoundary(root).Contains(url)) return null;
+        }
+        catch (DirectoryException)
+        {
+            return null;
+        }
+        var entry = new DirectoryEntry(
+            reader.GetString(4), url, EntryKind.File,
+            reader.IsDBNull(7) ? null : reader.GetInt64(7),
+            reader.IsDBNull(8) ? null : FromUnix(reader.GetDouble(8)));
+        Uri? artwork = reader.IsDBNull(6) ? null : Uri.TryCreate(reader.GetString(6), UriKind.Absolute, out var a) ? a : null;
+        return new GlobalSearchResult(category, reader.GetString(1), root, entry, reader.GetString(5), artwork);
+    }
+
+    /// Cached metadata payloads are fresh for 7 days; allowStale returns older payloads for offline display.
     public string? CachedMetadata(string key, bool allowStale = false, DateTimeOffset? now = null)
     {
-        var current = now is { } value ? value.ToUnixTimeMilliseconds() / 1000.0 : Now();
+        var current = now is { } value ? ToUnix(value) : Now();
         lock (_lock)
         {
             using var command = Command("SELECT payload,fetched FROM metadata WHERE cache_key=$a", key);
@@ -242,9 +503,38 @@ public sealed class LibraryIndex : IDisposable
         }
     }
 
+    public sealed record MetadataRecord(string Payload, double Fetched)
+    {
+        public bool IsFresh(DateTimeOffset? now = null) => ToUnix(now ?? DateTimeOffset.UtcNow) - Fetched < 7 * 86400;
+    }
+
+    /// Bulk read for catalogue preparation. Keys are bound in chunks so SQLite limits are never reached.
+    public Dictionary<string, MetadataRecord> MetadataRecords(IReadOnlyCollection<string> keys)
+    {
+        var records = new Dictionary<string, MetadataRecord>();
+        if (keys.Count == 0) return records;
+        lock (_lock)
+        {
+            foreach (var chunk in keys.Distinct().Chunk(800))
+            {
+                using var command = _connection.CreateCommand();
+                command.CommandText = "SELECT cache_key,payload,fetched FROM metadata WHERE cache_key IN ("
+                    + string.Join(',', chunk.Select((_, i) => "$k" + i)) + ")";
+                for (var i = 0; i < chunk.Length; i++) command.Parameters.AddWithValue("$k" + i, chunk[i]);
+                using var reader = command.ExecuteReader();
+                while (reader.Read()) records[reader.GetString(0)] = new MetadataRecord(reader.GetString(1), reader.GetDouble(2));
+            }
+        }
+        return records;
+    }
+
     public void SaveMetadata(string key, string payload)
     {
-        lock (_lock) Execute("INSERT OR REPLACE INTO metadata VALUES($a,$b,$c)", key, payload, Now());
+        lock (_lock)
+        {
+            Execute("INSERT OR REPLACE INTO metadata VALUES($a,$b,$c)", key, payload, Now());
+            BumpRevision();
+        }
     }
 
     public void SavePlaybackPosition(Uri url, double seconds, double duration)
@@ -268,22 +558,21 @@ public sealed class LibraryIndex : IDisposable
         }
     }
 
-    private static DateTimeOffset FromUnix(double seconds) =>
-        DateTimeOffset.FromUnixTimeMilliseconds((long)(seconds * 1000)).ToLocalTime();
-
-    private void Transaction(Action body)
+    private void Transaction(Action body, CancellationToken cancellationToken = default)
     {
         using var transaction = _connection.BeginTransaction(deferred: false);
         body();
+        cancellationToken.ThrowIfCancellationRequested();
         transaction.Commit();
     }
+
+    private static readonly string[] Names = ["$a", "$b", "$c", "$d", "$e", "$f", "$g", "$h"];
 
     private SqliteCommand Command(string sql, params object?[] values)
     {
         var command = _connection.CreateCommand();
         command.CommandText = sql;
-        var names = new[] { "$a", "$b", "$c", "$d" };
-        for (var i = 0; i < values.Length; i++) command.Parameters.AddWithValue(names[i], values[i] ?? DBNull.Value);
+        for (var i = 0; i < values.Length; i++) command.Parameters.AddWithValue(Names[i], values[i] ?? DBNull.Value);
         return command;
     }
 
@@ -299,34 +588,110 @@ public sealed class LibraryIndex : IDisposable
         return command.ExecuteScalar();
     }
 
+    private int Count(string sql, object?[] values) => Convert.ToInt32(Scalar(sql, values));
+
     public void Dispose() => _connection.Dispose();
 }
 
-/// Rebuilds the index by crawling every source. Sources that fail keep their previous records.
-public sealed class LibraryIndexer(GlobalSearchService scanner)
+/// Refreshes the index through a private staging database. Completed scopes are published atomically;
+/// sources with any failed folder keep all their previous records; cancellation discards staged work.
+public sealed class LibraryIndexer
 {
+    private readonly GlobalSearchService? _scanner;
+    private readonly DirectoryService? _directoryService;
+    private readonly int _maximumConcurrentFolders;
+
+    /// Test seam and legacy path: a plain scanner, without folder snapshots or schedules.
+    public LibraryIndexer(GlobalSearchService scanner)
+    {
+        _scanner = scanner;
+        _maximumConcurrentFolders = 2;
+    }
+
+    /// Production path: snapshots, HTTP validators, schedules and manual-only branches.
+    public LibraryIndexer(DirectoryService directoryService, int maximumConcurrentFolders = 2)
+    {
+        _directoryService = directoryService;
+        _maximumConcurrentFolders = Math.Max(1, maximumConcurrentFolders);
+    }
+
+    /// Added/changed/removed counts from publication, plus checked/unchanged folder counts.
+    public IndexRefreshSummary Summary { get; private set; } = new();
+
+    /// Directory for private staging databases. Defaults to the system temporary folder.
+    public string? StagingDirectory { get; init; }
+
+    /// Refreshes the selected scopes (default: every source root). Roots must contain every configured
+    /// source because they also drive source synchronization.
     public async Task<GlobalSearchSnapshot> RefreshAsync(
         IReadOnlyList<GlobalSearchRoot> roots,
         LibraryIndex index,
         Guid generation,
         Func<GlobalSearchSnapshot, Task> update,
         Func<int>? concurrencyLimit = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        IReadOnlyList<IndexScope>? scopes = null,
+        IndexPolicies? policies = null,
+        bool automatic = false,
+        bool full = false,
+        Func<CancellationToken, Task>? beforeBatch = null)
     {
         await Task.Run(() => index.SynchronizeSources(roots), cancellationToken);
-        if (roots.Count == 0) return new GlobalSearchSnapshot([], new GlobalSearchProgress(), []);
-        var snapshot = await scanner.SearchAsync(
-            "", roots, update, matchAllVideos: true,
-            batchSink: (batch, token) => Task.Run(() => index.Upsert(batch, generation), token),
-            concurrencyLimit: concurrencyLimit,
-            cancellationToken: cancellationToken);
-        cancellationToken.ThrowIfCancellationRequested();
-        var failed = snapshot.Failures.Select(f => f.CategoryId).ToHashSet();
-        foreach (var root in roots.Where(r => !failed.Contains(r.Id)))
+        var selected = IndexScope.Compact(scopes ?? roots.Select(IndexScope.ForRoot).ToList())
+            .Where(s => roots.Any(r => r.Id == s.Root.Id)).ToList();
+        Summary = new IndexRefreshSummary();
+        if (selected.Count == 0) return new GlobalSearchSnapshot([], new GlobalSearchProgress(), []);
+
+        var folder = Path.Combine(StagingDirectory ?? Path.GetTempPath(), "Myra-staging-" + generation.ToString("N"));
+        if (OperatingSystem.IsWindows()) Directory.CreateDirectory(folder);
+        else Directory.CreateDirectory(folder, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+        var stagingPath = Path.Combine(folder, "Index.sqlite");
+        try
         {
-            cancellationToken.ThrowIfCancellationRequested();
-            await Task.Run(() => index.CompleteSource(root, generation), cancellationToken);
+            GlobalSearchSnapshot snapshot;
+            IndexListingLoader? loader = null;
+            using (var staged = new LibraryIndex(stagingPath, searchable: false))
+            {
+                GlobalSearchService service;
+                if (_scanner is not null)
+                {
+                    service = _scanner;
+                }
+                else
+                {
+                    loader = new IndexListingLoader(_directoryService!, index, staged, roots, policies ?? new IndexPolicies(), selected, automatic, full);
+                    service = new GlobalSearchService(loader.ListingAsync, _maximumConcurrentFolders);
+                }
+                var selectedIds = selected.Select(s => s.Root.Id).ToHashSet();
+                snapshot = await service.SearchAsync(
+                    "", roots.Where(r => selectedIds.Contains(r.Id)).ToList(), update, matchAllVideos: true,
+                    batchSink: (batch, token) => Task.Run(() => staged.Upsert(batch, generation, token), token),
+                    concurrencyLimit: concurrencyLimit,
+                    cancellationToken: cancellationToken,
+                    scopes: selected,
+                    beforeBatch: beforeBatch);
+                cancellationToken.ThrowIfCancellationRequested();
+            }
+            var failed = snapshot.Failures.Select(f => f.CategoryId).ToHashSet();
+            var publishable = selected.Where(s => !failed.Contains(s.Root.Id)).ToList();
+            var summary = await Task.Run(() => index.Publish(stagingPath, publishable, cancellationToken), cancellationToken);
+            if (loader is not null)
+            {
+                summary.Checked = loader.CheckedFolders;
+                summary.Unchanged = loader.UnchangedFolders;
+            }
+            Summary = summary;
+            return snapshot;
         }
-        return snapshot;
+        finally
+        {
+            try
+            {
+                Directory.Delete(folder, recursive: true);
+            }
+            catch (IOException)
+            {
+            }
+        }
     }
 }

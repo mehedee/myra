@@ -29,10 +29,24 @@ public sealed partial class DirectoryService
         return ListingAsync(boundary.Root, boundary, cancellationToken);
     }
 
-    public async Task<DirectoryListing> ListingAsync(Uri url, UrlBoundary boundary, CancellationToken cancellationToken = default)
+    public async Task<DirectoryListing> ListingAsync(Uri url, UrlBoundary boundary, CancellationToken cancellationToken = default) =>
+        (await ConditionalListingAsync(url, boundary, null, cancellationToken)).Listing;
+
+    /// Conditional GET: sends If-None-Match (preferred) or If-Modified-Since from the cached snapshot.
+    /// A 304 reply returns the cached snapshot with a new check time and skips HTML parsing.
+    public async Task<IndexedFolder> ConditionalListingAsync(
+        Uri url, UrlBoundary boundary, IndexedFolder? cached, CancellationToken cancellationToken = default)
     {
         if (!boundary.Contains(url)) throw new DirectoryException(DirectoryErrorKind.OutsideCategoryRoot);
-        using var response = await _client.GetAsync(url, cancellationToken);
+        using var request = new HttpRequestMessage(HttpMethod.Get, url);
+        if (cached?.ETag is { } tag) request.Headers.TryAddWithoutValidation("If-None-Match", tag);
+        else if (cached?.LastModified is { } modified) request.Headers.TryAddWithoutValidation("If-Modified-Since", modified);
+        using var response = await _client.SendAsync(request, cancellationToken);
+        // Redirects must stay inside the source boundary.
+        if (response.RequestMessage?.RequestUri is { } final && !boundary.Contains(final))
+            throw new DirectoryException(DirectoryErrorKind.OutsideCategoryRoot);
+        if (response.StatusCode == System.Net.HttpStatusCode.NotModified && cached is not null)
+            return cached with { Checked = DateTimeOffset.Now };
         if (!response.IsSuccessStatusCode)
             throw new DirectoryException(DirectoryErrorKind.BadResponse, (int)response.StatusCode);
         var data = await response.Content.ReadAsByteArrayAsync(cancellationToken);
@@ -42,7 +56,10 @@ public sealed partial class DirectoryService
             throw new DirectoryException(DirectoryErrorKind.UnsupportedListing);
         var artwork = parsed.FirstOrDefault(MediaFileType.IsArtwork)?.Url;
         var visible = parsed.Where(e => e.Kind == EntryKind.Folder || MediaFileType.IsVideo(e)).ToList();
-        return new DirectoryListing(url, visible, artwork);
+        var etag = response.Headers.ETag?.ToString()
+                   ?? (response.Headers.TryGetValues("ETag", out var tags) ? tags.FirstOrDefault() : null);
+        var lastModified = response.Content.Headers.TryGetValues("Last-Modified", out var dates) ? dates.FirstOrDefault() : null;
+        return new IndexedFolder(new DirectoryListing(url, visible, artwork), DateTimeOffset.Now, etag, lastModified);
     }
 
     private static string Decode(byte[] data)
