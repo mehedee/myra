@@ -1,0 +1,58 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:Myra.App.ViewModels"
+        x:Class="Myra.App.Views.IndexManagementWindow"
+        Title="Index Management" Width="860" Height="600" MinWidth="700" MinHeight="420"
+        WindowStartupLocation="CenterOwner" ShowInTaskbar="False">
+  <DockPanel Margin="24">
+    <StackPanel DockPanel.Dock="Top" Margin="0,0,0,12">
+      <DockPanel>
+        <Button DockPanel.Dock="Right" x:Name="DoneButton" Content="Done" IsCancel="True" VerticalAlignment="Top" />
+        <StackPanel>
+          <TextBlock Text="Index Management" FontSize="20" FontWeight="SemiBold" />
+          <TextBlock Classes="muted" TextWrapping="Wrap"
+                     Text="Choose folders to refresh. Manual-only folders stay in your library." />
+        </StackPanel>
+      </DockPanel>
+    </StackPanel>
+    <StackPanel DockPanel.Dock="Bottom" Spacing="8" Margin="0,12,0,0">
+      <Grid ColumnDefinitions="Auto,*,Auto,Auto" ColumnSpacing="8">
+        <Button x:Name="RefreshDueButton" Content="Refresh due folders" />
+        <Button Grid.Column="2" x:Name="FullRescanButton" Content="Full rescan…" />
+        <Button Grid.Column="3" x:Name="RefreshSelectedButton" Content="Refresh selected" Classes="accent" IsDefault="True" />
+      </Grid>
+      <Grid x:Name="ProgressPanel" ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8" IsVisible="False">
+        <StackPanel Spacing="4">
+          <TextBlock x:Name="ProgressText" TextWrapping="Wrap" />
+          <ProgressBar IsIndeterminate="True" Height="4" x:Name="ProgressBar" />
+        </StackPanel>
+        <Button Grid.Column="1" x:Name="PauseButton" Content="Pause" VerticalAlignment="Top" />
+        <Button Grid.Column="2" x:Name="CancelButton" Content="Cancel" VerticalAlignment="Top" />
+      </Grid>
+      <TextBlock x:Name="ResultText" TextWrapping="Wrap" IsVisible="False" />
+      <TextBlock Classes="muted" FontSize="12" TextWrapping="Wrap"
+                 Text="Refresh selected includes subfolders and respects manual-only branches. Full rescan checks every folder in the selected scope, including manual-only branches." />
+    </StackPanel>
+    <TreeView x:Name="Tree" BorderThickness="1" BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}" CornerRadius="6">
+      <TreeView.Styles>
+        <Style Selector="TreeViewItem" x:DataType="vm:IndexNode">
+          <Setter Property="IsExpanded" Value="{Binding IsExpanded, Mode=TwoWay}" />
+        </Style>
+      </TreeView.Styles>
+      <TreeView.ItemTemplate>
+        <TreeDataTemplate x:DataType="vm:IndexNode" ItemsSource="{Binding Children}">
+          <Grid ColumnDefinitions="*,90,170,180" ColumnSpacing="12" Margin="0,2">
+            <StackPanel Spacing="2">
+              <CheckBox IsChecked="{Binding IsSelected, Mode=TwoWay}" Content="{Binding Name}" ToolTip.Tip="{Binding Location}" />
+              <TextBlock Text="{Binding Failure}" IsVisible="{Binding HasFailure}" Foreground="Orange" FontSize="12" Margin="28,0,0,0" />
+            </StackPanel>
+            <TextBlock Grid.Column="1" Text="{Binding FilesText}" Classes="muted" FontSize="12" VerticalAlignment="Center" />
+            <TextBlock Grid.Column="2" Text="{Binding CheckedText}" Classes="muted" FontSize="12" VerticalAlignment="Center" />
+            <ComboBox Grid.Column="3" ItemsSource="{Binding ScheduleChoices}" SelectedIndex="{Binding ScheduleIndex, Mode=TwoWay}"
+                      HorizontalAlignment="Stretch" />
+          </Grid>
+        </TreeDataTemplate>
+      </TreeView.ItemTemplate>
+    </TreeView>
+  </DockPanel>
+</Window>
