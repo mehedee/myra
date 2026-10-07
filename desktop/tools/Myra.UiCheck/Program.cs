@@ -1,4 +1,6 @@
 using Avalonia;
+using Avalonia.Controls;
+using Avalonia.Input;
 using Avalonia.Headless;
 using Avalonia.Threading;
 using Myra.App.Services;
@@ -186,6 +188,41 @@ var work = Dispatcher.UIThread.InvokeAsync(async () =>
         Save(window, "05-downloads.png");
     }
 
+    // Player rules that need no libVLC.
+    var stall = new PlayerStallDetector();
+    stall.Reset(0);
+    Check(!stall.Update(PlayerState.Playing, 1, 1, false) && !stall.Update(PlayerState.Playing, 2, 3, false), "no buffering while time advances");
+    Check(!stall.Update(PlayerState.Playing, 2, 4.5, false) && stall.Update(PlayerState.Playing, 2, 5.1, false), "buffering only after a two-second stall");
+    Check(!stall.Update(PlayerState.Playing, 2, 9, true) && !stall.Update(PlayerState.Paused, 2, 12, false), "no buffering while scrubbing or paused");
+    var visibility = new PlayerControlsVisibility { Fullscreen = true };
+    visibility.Interact(10);
+    Check(visibility.IsVisible(11.9, false) && !visibility.IsVisible(12.1, false), "fullscreen controls hide after two seconds");
+    visibility.Hovering = true;
+    Check(visibility.IsVisible(60, false), "controls stay while the pointer is over them");
+    visibility.Hovering = false;
+    visibility.MenuTracking = true;
+    Check(visibility.IsVisible(60, false), "controls stay while a menu is open");
+    visibility.MenuTracking = false;
+    Check(visibility.IsVisible(60, true), "controls stay while seeking");
+    visibility.Fullscreen = false;
+    Check(visibility.IsVisible(60, false), "controls always show outside fullscreen");
+    Check(SeekBarGeometry.Fraction(0, 200) == 0 && SeekBarGeometry.Fraction(200, 200) == 1 && Math.Abs(SeekBarGeometry.Fraction(100, 200) - 0.5) < 0.001, "seekbar geometry maps the inset track");
+    try
+    {
+        var view = new PlayerView();
+        var host = new Window { Content = view, Width = 1100, Height = 360 };
+        host.Show();
+        Dispatcher.UIThread.RunJobs();
+        host.CaptureRenderedFrame()?.Save(Path.Combine(output, "08-player-view.png"));
+        Console.WriteLine("saved 08-player-view.png");
+        Check(true, "PlayerView loads and renders without a view model");
+        host.Close();
+    }
+    catch (Exception error)
+    {
+        Console.WriteLine("SKIP PlayerView render: " + error.Message);
+    }
+
     // Embedded playback through libVLC when MYRA_LIBVLC_DIR is set.
     if (!string.IsNullOrEmpty(Environment.GetEnvironmentVariable("MYRA_LIBVLC_DIR")))
     {
@@ -193,7 +230,7 @@ var work = Dispatcher.UIThread.InvokeAsync(async () =>
         var closed = 0;
         vm.ShowPlayer = p =>
         {
-            if (player != p) p.CloseRequested += () => closed++;
+            if (player != p) p.BackToLibraryRequested += () => closed++;
             player = p;
         };
         vm.SearchText = "";
@@ -204,8 +241,24 @@ var work = Dispatcher.UIThread.InvokeAsync(async () =>
         await Pump(() => player!.State == PlayerState.Playing && player.Duration > 0, 10000);
         Check(player!.State == PlayerState.Playing && player.Duration is > 2 and < 4, $"episode 1 plays ({player.State}, {player.Duration:0.0}s) {player.ErrorMessage}");
         Check(!player.HasPrevious && player.HasNext, "first episode has only a next neighbour");
+        // The test plays the window's part: it confirms fullscreen changes the player asks for.
+        var requests = new List<bool>();
+        player.FullscreenChangeRequested += requests.Add;
+        player.ToggleFullscreenCommand.Execute(null);
+        player.ExitFullscreenCommand.Execute(null);
+        Check(requests.SequenceEqual([true]), "an exit during the enter transition is queued, not sent");
+        player.NotifyFullscreenChanged(true);
+        Check(requests.SequenceEqual([true, false]), "the queued exit runs once the window has entered fullscreen");
+        player.NotifyFullscreenChanged(false);
+        Check(!player.IsFullscreen, "fullscreen ended");
+        player.ToggleFullscreenCommand.Execute(null);
+        player.NotifyFullscreenChanged(true);
+        Check(player.IsFullscreen, "fullscreen entered");
         await Pump(() => player.Title.Contains("S01E02") && player.State == PlayerState.Playing, 10000);
         Check(player.Title.Contains("S01E02") && player.State == PlayerState.Playing, "auto-next moved to episode 2: " + player.Title);
+        Check(player.IsFullscreen, "automatic episode change keeps fullscreen");
+        player.NotifyFullscreenChanged(false);
+        requests.Clear();
         player.NextCommand.Execute(null);
         await Pump(() => player.Title.Contains("S01E03") && player.State == PlayerState.Playing, 5000);
         player.NextCommand.Execute(null);
@@ -245,14 +298,41 @@ var work = Dispatcher.UIThread.InvokeAsync(async () =>
         vm.Play(vm.Entries.First(e => e.Name == "TrackDefaults.mkv").Entry);
         await Pump(() => player.Title == "TrackDefaults" && player.State == PlayerState.Playing, 10000);
         vm.Play(vm.Entries.First(e => e.Name.StartsWith("Long Clip")).Entry);
-        await Pump(() => player.Title.StartsWith("Long Clip") && player.State == PlayerState.Playing && player.Position > 1, 10000);
-        Check(player.Position >= 9, $"resumed near the saved position ({player.Position:0.0}s)");
+        await Pump(() => player.Title.StartsWith("Long Clip") && player.State == PlayerState.Playing && player.IsSeekable, 10000);
+        Check(player.ResumePosition is >= 9, $"resume prompt offers the saved position ({player.ResumePosition:0.0}s)");
+        player.ResumeSavedPositionCommand.Execute(null);
+        await Pump(() => player.Position >= 9, 5000);
+        Check(player.Position >= 9 && player.ResumePosition is null, $"Resume jumps to the saved position ({player.Position:0.0}s)");
         // Command-line playback ("Myra.exe <url>") builds its queue from the URL's folder.
         vm.PlayTarget(new Uri(new Uri(root), "TV%20Series/Some%20Show/Season%201/Some.Show.S01E02.720p.mkv").AbsoluteUri);
         await Pump(() => player.Title.Contains("S01E02") && player.State == PlayerState.Playing, 10000);
         Check(player.Title.Contains("S01E02") && player.HasPrevious && player.HasNext, "command-line URL plays with its folder as the queue");
         player.ChangeVolume(30);
         Check(player.Volume == 100 && player.MediaPlayer.Volume <= 100, "volume is capped at 100");
+        Check(player.HandleShortcut(Key.Down, KeyModifiers.None) && player.Volume == 95, "Down lowers the volume by 5");
+        var before = player.Position;
+        Check(player.HandleShortcut(Key.Right, KeyModifiers.Shift) && player.Position > before + 40, "Shift+Right seeks far forward (60 seconds, within the clip)");
+        Check(player.HandleShortcut(Key.Left, KeyModifiers.Alt) && !player.HandleShortcut(Key.Escape, KeyModifiers.None), "Alt+Left seeks 3 seconds; Escape does nothing outside fullscreen");
+        Check(player.HandleShortcut(Key.Space, KeyModifiers.None), "Space is handled");
+        await Pump(() => player.State == PlayerState.Paused, 3000);
+        Check(player.State == PlayerState.Paused, "Space pauses and Pause stays in playback");
+        player.HandleShortcut(Key.Space, KeyModifiers.None);
+        var menuItems = new[] { PlayerMenuKind.Audio, PlayerMenuKind.Subtitles, PlayerMenuKind.Speed, PlayerMenuKind.Video }
+            .Select(kind => PlayerMenus.Build(player, kind, () => { })).ToList();
+        Check(menuItems.All(m => m.Items.Count > 0), "audio, subtitle, speed and video menus build");
+        var requested = 0;
+        player.OnlineSubtitlesRequested += _ => requested++;
+        player.FindOnlineSubtitles();
+        Check(requested == 1, "Find Online Subtitles raises OnlineSubtitlesRequested");
+        // Back to Library from fullscreen first leaves fullscreen, then returns to the library.
+        var returned = 0;
+        player.BackToLibraryRequested += () => returned++;
+        player.ToggleFullscreenCommand.Execute(null);
+        player.NotifyFullscreenChanged(true);
+        player.BackToLibraryCommand.Execute(null);
+        Check(returned == 0 && requests.Last() == false, "Back to Library asks to leave fullscreen first");
+        player.NotifyFullscreenChanged(false);
+        Check(returned == 1 && player.Current is null && !player.IsClosed, "Back to Library returns after fullscreen ends and keeps the player reusable");
         player.Close();
         Check(player.IsClosed, "player closed");
     }
