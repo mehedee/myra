@@ -1,0 +1,55 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:core="using:Myra.Core"
+        x:Class="Myra.App.Views.SettingsWindow"
+        x:DataType="core:AppSettings"
+        Title="Settings" Width="600" SizeToContent="Height" CanResize="False"
+        WindowStartupLocation="CenterOwner">
+  <StackPanel Margin="20" Spacing="8">
+    <TextBlock Text="Downloads" Classes="heading" />
+    <Grid ColumnDefinitions="170,*,Auto" RowDefinitions="Auto,Auto,Auto" RowSpacing="8" ColumnSpacing="8">
+      <TextBlock Text="Download folder" VerticalAlignment="Center" />
+      <TextBox Grid.Column="1" Text="{Binding DownloadDirectory}" />
+      <Button Grid.Column="2" Content="Browse…" x:Name="BrowseDownloads" />
+
+      <TextBlock Grid.Row="1" Text="aria2c.exe (optional)" VerticalAlignment="Center" />
+      <TextBox Grid.Row="1" Grid.Column="1" Text="{Binding Aria2PathOverride}" Watermark="Found automatically" />
+      <Button Grid.Row="1" Grid.Column="2" Content="Browse…" x:Name="BrowseAria2" />
+
+      <TextBlock Grid.Row="2" Text="vlc.exe (optional)" VerticalAlignment="Center" />
+      <TextBox Grid.Row="2" Grid.Column="1" Text="{Binding VlcPathOverride}" Watermark="Found automatically" />
+      <Button Grid.Row="2" Grid.Column="2" Content="Browse…" x:Name="BrowseVlc" />
+    </Grid>
+
+    <Grid ColumnDefinitions="170,*,170,*" RowDefinitions="Auto,Auto,Auto" RowSpacing="8" ColumnSpacing="8" Margin="0,4,0,0">
+      <TextBlock Text="Parallel downloads" VerticalAlignment="Center" />
+      <NumericUpDown Grid.Column="1" Value="{Binding ConcurrentDownloads}" Minimum="1" Maximum="20" FormatString="0" />
+      <TextBlock Grid.Column="2" Text="Connections per file" VerticalAlignment="Center" />
+      <NumericUpDown Grid.Column="3" Value="{Binding ConnectionsPerFile}" Minimum="1" Maximum="16" FormatString="0" />
+
+      <TextBlock Grid.Row="1" Text="Split count" VerticalAlignment="Center" />
+      <NumericUpDown Grid.Row="1" Grid.Column="1" Value="{Binding SplitCount}" Minimum="1" Maximum="16" FormatString="0" />
+      <TextBlock Grid.Row="1" Grid.Column="2" Text="Retries" VerticalAlignment="Center" />
+      <NumericUpDown Grid.Row="1" Grid.Column="3" Value="{Binding RetryCount}" Minimum="1" Maximum="20" FormatString="0" />
+
+      <TextBlock Grid.Row="2" Text="Speed limit" VerticalAlignment="Center" />
+      <TextBox Grid.Row="2" Grid.Column="1" Text="{Binding SpeedLimit}" Watermark="0 = unlimited, e.g. 5M" />
+      <TextBlock Grid.Row="2" Grid.Column="2" Text="Indexing" VerticalAlignment="Center" />
+      <ComboBox Grid.Row="2" Grid.Column="3" x:Name="IndexingBox" HorizontalAlignment="Stretch" />
+    </Grid>
+    <TextBlock Classes="muted" FontSize="12" TextWrapping="Wrap"
+               Text="Parallel downloads applies after aria2 restarts (restart Myra)." />
+
+    <TextBlock Text="Playback" Classes="heading" Margin="0,8,0,0" />
+    <Grid ColumnDefinitions="170,*,170,*" ColumnSpacing="8">
+      <TextBlock Text="Audio language" VerticalAlignment="Center" />
+      <ComboBox Grid.Column="1" x:Name="AudioBox" HorizontalAlignment="Stretch" />
+      <TextBlock Grid.Column="2" Text="Subtitle language" VerticalAlignment="Center" />
+      <ComboBox Grid.Column="3" x:Name="SubtitleBox" HorizontalAlignment="Stretch" />
+    </Grid>
+
+    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8" Margin="0,12,0,0">
+      <Button Content="Close" x:Name="CloseButton" Classes="accent" IsDefault="True" IsCancel="True" />
+    </StackPanel>
+  </StackPanel>
+</Window>

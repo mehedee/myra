@@ -1,0 +1,323 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:Myra.App.ViewModels"
+        xmlns:core="using:Myra.Core"
+        x:Class="Myra.App.Views.MainWindow"
+        x:DataType="vm:MainViewModel"
+        x:Name="Root"
+        Title="Myra"
+        Icon="/Assets/Myra.ico"
+        Width="1200" Height="760" MinWidth="820" MinHeight="520">
+
+  <Grid ColumnDefinitions="230,*" RowDefinitions="*,Auto">
+
+    <!-- Sidebar: sources -->
+    <Border Grid.Column="0" Grid.Row="0" Grid.RowSpan="2"
+            Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
+            BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}" BorderThickness="0,0,1,0">
+      <DockPanel Margin="10">
+        <Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto" Margin="4,4,0,8">
+          <TextBlock Text="Sources" Classes="heading" VerticalAlignment="Center" />
+          <Button Grid.Column="1" Classes="icon" ToolTip.Tip="Add a source"
+                  Command="{Binding AddSourceCommand}">
+  <PathIcon Data="{StaticResource IconPlus}" />
+</Button>
+        </Grid>
+
+        <StackPanel DockPanel.Dock="Bottom" Spacing="6" Margin="0,8,0,0">
+          <TextBlock Text="{Binding IndexStatus}" Classes="muted" FontSize="11" TextWrapping="Wrap" />
+          <ProgressBar IsIndeterminate="True" IsVisible="{Binding IsIndexing}" Height="3" MinHeight="3" />
+          <StackPanel Orientation="Horizontal" Spacing="6">
+            <Button Classes="icon" ToolTip.Tip="Refresh the search index"
+                    Command="{Binding RefreshIndexNowCommand}">
+  <PathIcon Data="{StaticResource IconRefresh}" />
+</Button>
+            <Button Classes="icon" ToolTip.Tip="{Binding ThemeLabel}" Command="{Binding CycleThemeCommand}">
+              <PathIcon Data="{StaticResource IconTheme}" />
+            </Button>
+            <Button Classes="icon" ToolTip.Tip="Settings"
+                    Command="{Binding OpenSettingsCommand}">
+  <PathIcon Data="{StaticResource IconSettings}" />
+</Button>
+            <Button Classes="icon" ToolTip.Tip="Open the download folder"
+                    Command="{Binding OpenDownloadFolderCommand}">
+  <PathIcon Data="{StaticResource IconFolderOpen}" />
+</Button>
+          </StackPanel>
+        </StackPanel>
+
+        <ListBox ItemsSource="{Binding Categories}" SelectedItem="{Binding SelectedCategory}"
+                 Background="Transparent">
+          <ListBox.ItemTemplate>
+            <DataTemplate x:DataType="core:Category">
+              <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding RootUrlString}">
+                <TextBlock.ContextMenu>
+                  <ContextMenu>
+                    <MenuItem Header="Edit…" Command="{ReflectionBinding #Root.DataContext.EditSourceCommand}" CommandParameter="{Binding}" />
+                    <MenuItem Header="Remove" Command="{ReflectionBinding #Root.DataContext.DeleteSourceCommand}" CommandParameter="{Binding}" />
+                  </ContextMenu>
+                </TextBlock.ContextMenu>
+              </TextBlock>
+            </DataTemplate>
+          </ListBox.ItemTemplate>
+        </ListBox>
+      </DockPanel>
+    </Border>
+
+    <!-- Main area -->
+    <DockPanel Grid.Column="1" Grid.Row="0">
+
+      <!-- Toolbar -->
+      <Grid DockPanel.Dock="Top" ColumnDefinitions="Auto,*,Auto,Auto,Auto" Margin="10,10,10,6">
+        <Button Classes="icon" ToolTip.Tip="Up one folder" Command="{Binding NavigateUpCommand}" Margin="0,0,6,0">
+  <PathIcon Data="{StaticResource IconUp}" />
+</Button>
+        <ScrollViewer Grid.Column="1" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
+          <ItemsControl ItemsSource="{Binding Breadcrumbs}">
+            <ItemsControl.ItemsPanel>
+              <ItemsPanelTemplate>
+                <StackPanel Orientation="Horizontal" />
+              </ItemsPanelTemplate>
+            </ItemsControl.ItemsPanel>
+            <ItemsControl.ItemTemplate>
+              <DataTemplate x:DataType="vm:Breadcrumb">
+                <StackPanel Orientation="Horizontal">
+                  <Button Content="{Binding Name}" Background="Transparent" Padding="4,2"
+                          Command="{ReflectionBinding #Root.DataContext.OpenBreadcrumbCommand}" CommandParameter="{Binding}" />
+                  <TextBlock Text="›" VerticalAlignment="Center" Classes="muted" Margin="2,0" />
+                </StackPanel>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </ScrollViewer>
+        <TextBox Grid.Column="2" Width="280" Margin="8,0" Text="{Binding SearchText}"
+                 Watermark="{Binding SearchWatermark}" x:Name="SearchBox" />
+        <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="2">
+          <RadioButton GroupName="Scope" Content="Current" IsChecked="{Binding !IsGlobalScope}" />
+          <RadioButton GroupName="Scope" Content="Global" IsChecked="{Binding IsGlobalScope}" />
+        </StackPanel>
+        <Button Grid.Column="4" Classes="icon" ToolTip.Tip="Reload this folder"
+                Command="{Binding ReloadCommand}" Margin="6,0,0,0">
+  <PathIcon Data="{StaticResource IconRefresh}" />
+</Button>
+      </Grid>
+
+      <!-- Error bar -->
+      <Border DockPanel.Dock="Top" IsVisible="{Binding ErrorMessage, Converter={x:Static ObjectConverters.IsNotNull}}"
+              Background="#33E81123" CornerRadius="4" Margin="10,0,10,6" Padding="10,6">
+        <Grid ColumnDefinitions="*,Auto">
+          <SelectableTextBlock Text="{Binding ErrorMessage}" TextWrapping="Wrap" VerticalAlignment="Center" />
+          <Button Grid.Column="1" Classes="icon" Command="{Binding DismissErrorCommand}">
+  <PathIcon Data="{StaticResource IconClose}" />
+</Button>
+        </Grid>
+      </Border>
+
+      <!-- Selection bar -->
+      <Border DockPanel.Dock="Bottom" IsVisible="{Binding HasSelection}" Margin="10,6"
+              Background="{DynamicResource SystemControlBackgroundBaseLowBrush}" CornerRadius="6" Padding="10,6">
+        <StackPanel Orientation="Horizontal" Spacing="10">
+          <TextBlock VerticalAlignment="Center">
+            <Run Text="{Binding SelectedCount}" /><Run Text=" selected" />
+          </TextBlock>
+          <Button Content="Download selected" Classes="accent" Command="{Binding DownloadSelectedCommand}" />
+          <Button Content="Select all" Command="{Binding SelectAllCommand}" />
+          <Button Content="Clear" Command="{Binding ClearSelectionCommand}" />
+        </StackPanel>
+      </Border>
+
+      <Grid>
+        <!-- Empty state -->
+        <StackPanel IsVisible="{Binding !HasSources}" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="12">
+          <Image Source="/Assets/Myra.png" Width="96" Height="96" />
+          <TextBlock Text="Add an h5ai, Apache or nginx directory to start." HorizontalAlignment="Center" />
+          <Button Content="Add a source" Classes="accent" HorizontalAlignment="Center" Command="{Binding AddSourceCommand}" />
+        </StackPanel>
+
+        <!-- Folder browser -->
+        <DockPanel IsVisible="{Binding ShowingBrowser}">
+          <Grid DockPanel.Dock="Top" ColumnDefinitions="40,*,150,90,190" Margin="14,0,24,2" IsVisible="{Binding HasSources}">
+            <Button Grid.Column="1" Content="{Binding SortNameLabel}" Background="Transparent" Padding="2"
+                    Command="{Binding SortByCommand}" CommandParameter="Name" />
+            <Button Grid.Column="2" Content="{Binding SortDateLabel}" Background="Transparent" Padding="2"
+                    Command="{Binding SortByCommand}" CommandParameter="Date" />
+            <TextBlock Grid.Column="3" Text="Size" Classes="muted" VerticalAlignment="Center" />
+          </Grid>
+          <Grid>
+            <ListBox x:Name="EntryList" ItemsSource="{Binding Entries}" Background="Transparent" Margin="4,0">
+              <ListBox.ItemTemplate>
+                <DataTemplate x:DataType="vm:EntryViewModel">
+                  <Grid ColumnDefinitions="40,*,150,90,190" Background="Transparent">
+                    <CheckBox IsChecked="{Binding IsSelected}" />
+                    <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                      <Panel Width="16" Height="16">
+                        <PathIcon Data="{StaticResource IconFolder}" Width="16" Height="16" IsVisible="{Binding IsFolder}" Foreground="#E8A33D" />
+                        <PathIcon Data="{StaticResource IconMovie}" Width="15" Height="15" IsVisible="{Binding IsVideo}" Opacity="0.75" />
+                      </Panel>
+                      <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Name}" />
+                    </StackPanel>
+                    <TextBlock Grid.Column="2" Text="{Binding DateText}" Classes="muted" VerticalAlignment="Center" />
+                    <TextBlock Grid.Column="3" Text="{Binding SizeText}" Classes="muted" VerticalAlignment="Center" />
+                    <StackPanel Grid.Column="4" Orientation="Horizontal" Spacing="4" HorizontalAlignment="Right">
+                      <Button Classes="icon" ToolTip.Tip="Play" IsVisible="{Binding IsVideo}"
+                              Command="{ReflectionBinding #Root.DataContext.PlayEntryCommand}" CommandParameter="{Binding}">
+  <PathIcon Data="{StaticResource IconPlay}" />
+</Button>
+                      <Button Classes="icon" ToolTip.Tip="Open in VLC" IsVisible="{Binding IsVideo}"
+                              Command="{ReflectionBinding #Root.DataContext.OpenEntryInVlcCommand}" CommandParameter="{Binding}">
+                              <Image Source="/Assets/VLC.png" Width="15" Height="15" />
+                              </Button>
+                      <Button Classes="icon" ToolTip.Tip="Copy link"
+                              Command="{ReflectionBinding #Root.DataContext.CopyEntryUrlCommand}" CommandParameter="{Binding}">
+  <PathIcon Data="{StaticResource IconCopy}" />
+</Button>
+                      <Button Classes="icon" ToolTip.Tip="Download"
+                              Command="{ReflectionBinding #Root.DataContext.DownloadEntryCommand}" CommandParameter="{Binding}">
+  <PathIcon Data="{StaticResource IconDownload}" />
+</Button>
+                    </StackPanel>
+                  </Grid>
+                </DataTemplate>
+              </ListBox.ItemTemplate>
+            </ListBox>
+            <ProgressBar IsIndeterminate="True" IsVisible="{Binding IsLoading}" VerticalAlignment="Top" Height="3" MinHeight="3" />
+          </Grid>
+        </DockPanel>
+
+        <!-- Global results -->
+        <DockPanel IsVisible="{Binding ShowingGlobalResults}">
+          <TextBlock DockPanel.Dock="Top" Text="{Binding GlobalStatus}" Classes="muted" Margin="14,0,14,4" />
+          <Button DockPanel.Dock="Bottom" Content="Load more" HorizontalAlignment="Center" Margin="6"
+                  IsVisible="{Binding CanLoadMoreGlobal}" Command="{Binding LoadMoreGlobalCommand}" />
+          <ListBox x:Name="ResultList" ItemsSource="{Binding GlobalResults}" Background="Transparent" Margin="4,0">
+            <ListBox.ItemTemplate>
+              <DataTemplate x:DataType="vm:GlobalResultViewModel">
+                <Grid ColumnDefinitions="40,*,90,190" Background="Transparent">
+                  <CheckBox IsChecked="{Binding IsSelected}" />
+                  <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                    <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Name}" />
+                    <TextBlock Text="{Binding Location}" Classes="muted" FontSize="11" TextTrimming="CharacterEllipsis" />
+                  </StackPanel>
+                  <TextBlock Grid.Column="2" Text="{Binding SizeText}" Classes="muted" VerticalAlignment="Center" />
+                  <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="4" HorizontalAlignment="Right">
+                    <Button Classes="icon" ToolTip.Tip="Play"
+                            Command="{ReflectionBinding #Root.DataContext.PlayResultCommand}" CommandParameter="{Binding}">
+  <PathIcon Data="{StaticResource IconPlay}" />
+</Button>
+                    <Button Classes="icon" ToolTip.Tip="Open in VLC"
+                            Command="{ReflectionBinding #Root.DataContext.OpenResultInVlcCommand}" CommandParameter="{Binding}">
+                            <Image Source="/Assets/VLC.png" Width="15" Height="15" />
+                            </Button>
+                    <Button Classes="icon" ToolTip.Tip="Copy link"
+                            Command="{ReflectionBinding #Root.DataContext.CopyResultUrlCommand}" CommandParameter="{Binding}">
+  <PathIcon Data="{StaticResource IconCopy}" />
+</Button>
+                    <Button Classes="icon" ToolTip.Tip="Download"
+                            Command="{ReflectionBinding #Root.DataContext.DownloadResultCommand}" CommandParameter="{Binding}">
+  <PathIcon Data="{StaticResource IconDownload}" />
+</Button>
+                  </StackPanel>
+                </Grid>
+              </DataTemplate>
+            </ListBox.ItemTemplate>
+          </ListBox>
+        </DockPanel>
+
+        <!-- Toast -->
+        <Border IsVisible="{Binding ToastMessage, Converter={x:Static ObjectConverters.IsNotNull}}"
+                HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="0,0,0,16"
+                Background="{DynamicResource SystemControlBackgroundBaseHighBrush}" CornerRadius="16" Padding="14,6"
+                IsHitTestVisible="False">
+          <TextBlock Text="{Binding ToastMessage}" Foreground="{DynamicResource SystemControlBackgroundAltHighBrush}" />
+        </Border>
+      </Grid>
+    </DockPanel>
+
+    <!-- Download footer -->
+    <Border Grid.Column="1" Grid.Row="1" IsVisible="{Binding Downloads.HasRecords}"
+            BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}" BorderThickness="0,1,0,0">
+      <DockPanel>
+        <Button DockPanel.Dock="Top" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"
+                Background="Transparent" CornerRadius="0" Padding="12,8" Command="{Binding ToggleDownloadDetailsCommand}">
+          <Grid ColumnDefinitions="Auto,*,Auto">
+            <TextBlock Text="Downloads" FontWeight="SemiBold" VerticalAlignment="Center" Margin="0,0,12,0" />
+            <ProgressBar Grid.Column="1" Value="{Binding Downloads.OverallPercent}" Maximum="100" VerticalAlignment="Center" />
+            <TextBlock Grid.Column="2" Classes="muted" Margin="12,0,0,0" VerticalAlignment="Center">
+              <Run Text="{Binding Downloads.CompletedBytes, Converter={x:Static vm:Format.BytesConverter}}" />
+              <Run Text=" of " />
+              <Run Text="{Binding Downloads.TotalBytes, Converter={x:Static vm:Format.BytesConverter}}" />
+              <Run Text="  " />
+              <Run Text="{Binding Downloads.DownloadSpeed, Converter={x:Static vm:Format.SpeedConverter}}" />
+            </TextBlock>
+          </Grid>
+        </Button>
+
+        <StackPanel IsVisible="{Binding ShowDownloadDetails}">
+          <Border IsVisible="{Binding Downloads.IsScanning}" Padding="12,4">
+            <StackPanel Orientation="Horizontal" Spacing="10">
+              <TextBlock VerticalAlignment="Center" Classes="muted">
+                <Run Text="Scanning folders… " /><Run Text="{Binding Downloads.ScanProgress.FoldersVisited}" />
+                <Run Text=" folders, " /><Run Text="{Binding Downloads.ScanProgress.FilesFound}" /><Run Text=" files" />
+              </TextBlock>
+              <Button Content="Cancel" Command="{Binding CancelScanCommand}" />
+            </StackPanel>
+          </Border>
+          <ListBox ItemsSource="{Binding Batches}" MaxHeight="240" Background="Transparent">
+            <ListBox.ItemTemplate>
+              <DataTemplate x:DataType="core:DownloadBatch">
+                <Grid ColumnDefinitions="*,200,Auto" Margin="0,2">
+                  <StackPanel VerticalAlignment="Center">
+                    <TextBlock Text="{Binding Title}" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Title}" />
+                    <TextBlock Classes="muted" FontSize="11">
+                      <Run Text="{Binding Status, Converter={x:Static vm:Format.StatusConverter}}" />
+                      <Run Text=" · " />
+                      <Run Text="{Binding CompletedBytes, Converter={x:Static vm:Format.BytesConverter}}" />
+                      <Run Text=" / " />
+                      <Run Text="{Binding TotalBytes, Converter={x:Static vm:Format.BytesConverter}}" />
+                      <Run Text="  " />
+                      <Run Text="{Binding DownloadSpeed, Converter={x:Static vm:Format.SpeedConverter}}" />
+                    </TextBlock>
+                    <TextBlock Text="{Binding ErrorMessage}" Foreground="#E81123" FontSize="11" TextWrapping="Wrap"
+                               IsVisible="{Binding ErrorMessage, Converter={x:Static ObjectConverters.IsNotNull}}" />
+                  </StackPanel>
+                  <ProgressBar Grid.Column="1" Value="{Binding ProgressPercent}" Maximum="100" VerticalAlignment="Center" Margin="10,0" />
+                  <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="4">
+                    <Button Classes="icon" ToolTip.Tip="Pause" IsVisible="{Binding CanPause}"
+                            Command="{ReflectionBinding #Root.DataContext.PauseBatchCommand}" CommandParameter="{Binding}">
+  <PathIcon Data="{StaticResource IconPause}" />
+</Button>
+                    <Button Classes="icon" ToolTip.Tip="Resume or retry" IsVisible="{Binding CanResume}"
+                            Command="{ReflectionBinding #Root.DataContext.ResumeBatchCommand}" CommandParameter="{Binding}">
+  <PathIcon Data="{StaticResource IconPlay}" />
+</Button>
+                    <Button Classes="icon" ToolTip.Tip="Cancel (keeps partial files)" IsVisible="{Binding CanCancel}"
+                            Command="{ReflectionBinding #Root.DataContext.CancelBatchCommand}" CommandParameter="{Binding}">
+  <PathIcon Data="{StaticResource IconStop}" />
+</Button>
+                    <Button Classes="icon" ToolTip.Tip="Play the downloaded video"
+                            Command="{ReflectionBinding #Root.DataContext.PlayBatchCommand}" CommandParameter="{Binding}">
+  <PathIcon Data="{StaticResource IconMovie}" />
+</Button>
+                    <Button Classes="icon" ToolTip.Tip="Show in file manager"
+                            Command="{ReflectionBinding #Root.DataContext.RevealBatchCommand}" CommandParameter="{Binding}">
+  <PathIcon Data="{StaticResource IconFolderOpen}" />
+</Button>
+                    <Button Classes="icon" ToolTip.Tip="Remove from list (keeps files)"
+                            Command="{ReflectionBinding #Root.DataContext.RemoveBatchCommand}" CommandParameter="{Binding}">
+  <PathIcon Data="{StaticResource IconClose}" />
+</Button>
+                    <Button Classes="icon" ToolTip.Tip="Delete unfinished files"
+                            Command="{ReflectionBinding #Root.DataContext.DeletePartialFilesCommand}" CommandParameter="{Binding}">
+  <PathIcon Data="{StaticResource IconDelete}" />
+</Button>
+                  </StackPanel>
+                </Grid>
+              </DataTemplate>
+            </ListBox.ItemTemplate>
+          </ListBox>
+          <Button Content="Clear completed" HorizontalAlignment="Right" Margin="10,4" Command="{Binding ClearCompletedCommand}" />
+        </StackPanel>
+      </DockPanel>
+    </Border>
+  </Grid>
+</Window>

@@ -1,0 +1,9 @@
+bin/
+obj/
+dist/
+build/cache/
+*.user
+.vs/
+artifacts/
+
+__pycache__/

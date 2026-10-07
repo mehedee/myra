@@ -1,0 +1,58 @@
+using System.Runtime.InteropServices;
+using Avalonia;
+using Avalonia.Controls.ApplicationLifetimes;
+using Avalonia.Markup.Xaml;
+using Avalonia.Styling;
+using Avalonia.Threading;
+using Myra.App.Services;
+using Myra.App.ViewModels;
+using Myra.App.Views;
+using Myra.Core;
+
+namespace Myra.App;
+
+public partial class App : Application
+{
+    private PosixSignalRegistration[]? _signals;
+
+    public override void Initialize() => AvaloniaXamlLoader.Load(this);
+
+    public override void OnFrameworkInitializationCompleted()
+    {
+        if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
+        {
+            var services = new AppServices();
+            var main = new MainViewModel(services);
+            ApplyTheme(services.Store.Settings.Theme);
+            desktop.MainWindow = new MainWindow { DataContext = main };
+            desktop.ShutdownRequested += (_, _) => services.Shutdown();
+            // Logout, systemd and `kill` send SIGTERM; shut down through the normal path so state is saved.
+            _signals =
+            [
+                PosixSignalRegistration.Create(PosixSignal.SIGTERM, OnSignal),
+                PosixSignalRegistration.Create(PosixSignal.SIGINT, OnSignal),
+            ];
+
+            void OnSignal(PosixSignalContext context)
+            {
+                context.Cancel = true;
+                Dispatcher.UIThread.Post(() => desktop.Shutdown());
+            }
+            _ = main.StartAsync();
+            // "Myra.exe <video URL or file>" plays it straight away, e.g. from "Open with".
+            if (desktop.Args?.FirstOrDefault() is { } target) main.PlayTarget(target);
+        }
+        base.OnFrameworkInitializationCompleted();
+    }
+
+    public static void ApplyTheme(AppThemeMode mode)
+    {
+        if (Current is null) return;
+        Current.RequestedThemeVariant = mode switch
+        {
+            AppThemeMode.Light => ThemeVariant.Light,
+            AppThemeMode.Dark => ThemeVariant.Dark,
+            _ => ThemeVariant.Default,
+        };
+    }
+}

@@ -1,0 +1,18 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="Myra.App.Views.SourceDialog"
+        Title="Source" Width="520" SizeToContent="Height" CanResize="False"
+        WindowStartupLocation="CenterOwner">
+  <StackPanel Margin="20" Spacing="10">
+    <TextBlock Text="Directory address" Classes="heading" />
+    <TextBox x:Name="UrlBox" Watermark="http://server/path/to/movies/" />
+    <TextBlock Text="Name (optional)" Classes="heading" />
+    <TextBox x:Name="NameBox" Watermark="Movies" />
+    <TextBlock Classes="muted" TextWrapping="Wrap" FontSize="12"
+               Text="Myra only follows links inside this address. h5ai, Apache and nginx listings are supported." />
+    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8" Margin="0,8,0,0">
+      <Button Content="Cancel" x:Name="CancelButton" IsCancel="True" />
+      <Button Content="Save" x:Name="SaveButton" Classes="accent" IsDefault="True" />
+    </StackPanel>
+  </StackPanel>
+</Window>

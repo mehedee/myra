@@ -1,0 +1,89 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:Myra.App.ViewModels"
+        xmlns:vlc="clr-namespace:LibVLCSharp.Avalonia;assembly=LibVLCSharp.Avalonia"
+        x:Class="Myra.App.Views.PlayerWindow"
+        x:DataType="vm:PlayerViewModel"
+        Title="{Binding Title}"
+        Icon="/Assets/Myra.ico"
+        Width="1100" Height="700" MinWidth="640" MinHeight="400"
+        Background="Black">
+  <DockPanel>
+    <!-- Controls sit below the video: a native video surface cannot have controls drawn over it. -->
+    <Border x:Name="Controls" DockPanel.Dock="Bottom" Background="#E6181818" Padding="12,6,12,10">
+      <StackPanel Spacing="4">
+        <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10">
+          <TextBlock Text="{Binding TimeText}" Foreground="White" VerticalAlignment="Center" FontFeatures="tnum" />
+          <Slider Grid.Column="1" x:Name="SeekBar" Minimum="0" Maximum="{Binding Duration}" Value="{Binding Position}"
+                  IsSnapToTickEnabled="False" VerticalAlignment="Center" />
+          <TextBlock Grid.Column="2" Text="{Binding DurationText}" Foreground="White" VerticalAlignment="Center" FontFeatures="tnum" />
+        </Grid>
+        <!-- Wide: one row (options left, transport centre, volume right). Narrow: three centred rows. See ArrangeControls. -->
+        <Grid x:Name="ControlRow" ColumnDefinitions="*,Auto,*" RowDefinitions="Auto,Auto,Auto" RowSpacing="6">
+          <!-- Options: left -->
+          <StackPanel x:Name="OptionsGroup" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+            <ComboBox ItemsSource="{Binding AudioTracks}" SelectedItem="{Binding SelectedAudio}" MinWidth="120" MaxWidth="200"
+                      PlaceholderText="Audio" ToolTip.Tip="Audio track" />
+            <ComboBox ItemsSource="{Binding SubtitleTracks}" SelectedItem="{Binding SelectedSubtitle}" MinWidth="120" MaxWidth="200"
+                      PlaceholderText="Subtitles" ToolTip.Tip="Subtitles" />
+            <Button Classes="icon" ToolTip.Tip="Load a subtitle file" x:Name="LoadSubtitle">
+  <PathIcon Data="{StaticResource IconSubtitles}" />
+</Button>
+            <ComboBox ItemsSource="{Binding Speeds}" SelectedItem="{Binding Speed}" ToolTip.Tip="Speed" MinWidth="70" />
+          </StackPanel>
+
+          <!-- Transport: centre -->
+          <StackPanel x:Name="TransportGroup" Grid.Column="1" Orientation="Horizontal" Spacing="6" HorizontalAlignment="Center">
+            <Button Classes="icon" ToolTip.Tip="Previous (P)" Command="{Binding PreviousCommand}">
+  <PathIcon Data="{StaticResource IconPrevious}" />
+</Button>
+            <Button Classes="icon" ToolTip.Tip="Back 10 seconds (Left)" x:Name="BackButton">
+  <PathIcon Data="{StaticResource IconRewind}" />
+</Button>
+            <Button Classes="icon accent" ToolTip.Tip="Play / Pause (Space)" Command="{Binding PlayPauseCommand}" MinWidth="44">
+              <Panel>
+                <PathIcon Data="{StaticResource IconPause}" IsVisible="{Binding IsPlaying}" />
+                <PathIcon Data="{StaticResource IconPlay}" IsVisible="{Binding !IsPlaying}" />
+              </Panel>
+            </Button>
+            <Button Classes="icon" ToolTip.Tip="Forward 10 seconds (Right)" x:Name="ForwardButton">
+  <PathIcon Data="{StaticResource IconForward}" />
+</Button>
+            <Button Classes="icon" ToolTip.Tip="Next (N)" Command="{Binding NextCommand}">
+  <PathIcon Data="{StaticResource IconNext}" />
+</Button>
+            <Button Classes="icon" ToolTip.Tip="Stop and close" Command="{Binding StopCommand}">
+  <PathIcon Data="{StaticResource IconStop}" />
+</Button>
+          </StackPanel>
+
+          <!-- Volume and window: right -->
+          <StackPanel x:Name="VolumeGroup" Grid.Column="2" Orientation="Horizontal" Spacing="6" HorizontalAlignment="Right" VerticalAlignment="Center">
+            <ToggleButton Classes="icon" ToolTip.Tip="Repeat this video" IsChecked="{Binding Repeat}">
+  <PathIcon Data="{StaticResource IconRefresh}" />
+</ToggleButton>
+            <ToggleButton Classes="icon" ToolTip.Tip="Play the next video when this one ends" IsChecked="{Binding Autoplay}">
+  <PathIcon Data="{StaticResource IconAutoNext}" />
+</ToggleButton>
+            <Button Classes="icon" ToolTip.Tip="Mute (M)" Command="{Binding ToggleMuteCommand}">
+  <PathIcon Data="{StaticResource IconVolume}" />
+</Button>
+            <Slider Width="100" Minimum="0" Maximum="100" Value="{Binding Volume}" VerticalAlignment="Center" ToolTip.Tip="Volume (Up / Down)" />
+            <Button Classes="icon" ToolTip.Tip="Fullscreen (F or F11)" x:Name="FullscreenButton">
+  <PathIcon Data="{StaticResource IconFullscreen}" />
+</Button>
+          </StackPanel>
+        </Grid>
+        <Grid ColumnDefinitions="*,Auto">
+          <TextBlock Foreground="#CCFFFFFF" FontSize="12" TextTrimming="CharacterEllipsis">
+            <Run Text="{Binding Title}" FontWeight="SemiBold" /><Run Text="   " /><Run Text="{Binding Subtitle}" />
+          </TextBlock>
+          <TextBlock Grid.Column="1" Text="Buffering…" Foreground="Orange" FontSize="12" IsVisible="{Binding IsBuffering}" />
+        </Grid>
+        <TextBlock Text="{Binding ErrorMessage}" Foreground="#FF6B6B" TextWrapping="Wrap"
+                   IsVisible="{Binding ErrorMessage, Converter={x:Static ObjectConverters.IsNotNull}}" />
+      </StackPanel>
+    </Border>
+    <vlc:VideoView x:Name="Video" />
+  </DockPanel>
+</Window>
