@@ -162,7 +162,7 @@ public sealed class IndexRefreshTests : IDisposable
         using var index = new LibraryIndex(path);
         var migrated = watch.Elapsed;
         Assert.Equal(120_000, index.VideoCount());
-        Assert.Equal(new FileInfo(path + ".v2-backup").Length > 0, true);
+        Assert.True(new FileInfo(path + ".v2-backup").Length > 0);
         watch.Restart();
         var rows = index.FolderRows([source]);
         var tree = watch.Elapsed;
