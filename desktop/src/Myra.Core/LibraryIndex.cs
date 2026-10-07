@@ -46,39 +46,69 @@ public sealed class LibraryIndex : IDisposable
 
     public bool UsesTrigramSearch => _hasTrigram;
 
-    private static SqliteConnection Open(string path)
+    private static SqliteConnection Open(string path, SqliteOpenMode mode = SqliteOpenMode.ReadWriteCreate)
     {
         var connection = new SqliteConnection(new SqliteConnectionStringBuilder
         {
             DataSource = path,
-            Mode = SqliteOpenMode.ReadWriteCreate,
+            Mode = mode,
             Pooling = false,
         }.ToString());
         connection.Open();
         return connection;
     }
 
-    /// Backup includes committed WAL pages, unlike copying the database file. An existing backup is kept.
+    /// Backup includes committed WAL pages, unlike copying the database file. The copy is written to
+    /// "{backup}.tmp", verified, and only then renamed, so an interrupted backup is never trusted.
+    /// An existing backup is kept only when it verifies; otherwise it is recreated.
     private void Backup(int version)
     {
         var backupPath = Path + $".v{version}-backup";
-        if (File.Exists(backupPath)) return;
+        if (File.Exists(backupPath) && IsValidBackup(backupPath, version)) return;
+        var temporary = backupPath + ".tmp";
         try
         {
-            using var destination = Open(backupPath);
-            _connection.BackupDatabase(destination);
+            DeleteDatabaseFiles(temporary);
+            using (var destination = Open(temporary))
+                _connection.BackupDatabase(destination);
+            if (!IsValidBackup(temporary, version)) throw new LibraryIndexException("The backup copy did not pass verification.");
+            File.Move(temporary, backupPath, overwrite: true);
         }
         catch (Exception error)
         {
             try
             {
-                File.Delete(backupPath);
+                DeleteDatabaseFiles(temporary);
             }
-            catch (IOException)
+            catch (Exception)
             {
             }
             throw new LibraryIndexException("Index backup failed; migration was not performed.", error);
         }
+    }
+
+    /// True when the file opens as SQLite, passes quick_check and has the expected schema version.
+    internal static bool IsValidBackup(string path, int version)
+    {
+        try
+        {
+            using var connection = Open(path, SqliteOpenMode.ReadWrite);
+            using var check = connection.CreateCommand();
+            check.CommandText = "PRAGMA quick_check";
+            if (check.ExecuteScalar() as string != "ok") return false;
+            check.CommandText = "PRAGMA user_version";
+            return Convert.ToInt32(check.ExecuteScalar()) == version;
+        }
+        catch (Exception)
+        {
+            return false;
+        }
+    }
+
+    private static void DeleteDatabaseFiles(string path)
+    {
+        foreach (var file in new[] { path, path + "-wal", path + "-shm", path + "-journal" })
+            if (File.Exists(file)) File.Delete(file);
     }
 
     private bool Migrate(bool searchable)
@@ -517,6 +547,7 @@ public sealed class LibraryIndex : IDisposable
         {
             foreach (var chunk in keys.Distinct().Chunk(800))
             {
+                ThrowIfDisposed();
                 using var command = _connection.CreateCommand();
                 command.CommandText = "SELECT cache_key,payload,fetched FROM metadata WHERE cache_key IN ("
                     + string.Join(',', chunk.Select((_, i) => "$k" + i)) + ")";
@@ -560,6 +591,7 @@ public sealed class LibraryIndex : IDisposable
 
     private void Transaction(Action body, CancellationToken cancellationToken = default)
     {
+        ThrowIfDisposed();
         using var transaction = _connection.BeginTransaction(deferred: false);
         body();
         cancellationToken.ThrowIfCancellationRequested();
@@ -570,6 +602,7 @@ public sealed class LibraryIndex : IDisposable
 
     private SqliteCommand Command(string sql, params object?[] values)
     {
+        ThrowIfDisposed();
         var command = _connection.CreateCommand();
         command.CommandText = sql;
         for (var i = 0; i < values.Length; i++) command.Parameters.AddWithValue(Names[i], values[i] ?? DBNull.Value);
@@ -590,7 +623,23 @@ public sealed class LibraryIndex : IDisposable
 
     private int Count(string sql, object?[] values) => Convert.ToInt32(Scalar(sql, values));
 
-    public void Dispose() => _connection.Dispose();
+    private bool _disposed;
+
+    private void ThrowIfDisposed()
+    {
+        if (_disposed) throw new LibraryIndexException("The index is closed.");
+    }
+
+    /// Waits for the running statement or transaction, then closes the connection.
+    public void Dispose()
+    {
+        lock (_lock)
+        {
+            if (_disposed) return;
+            _disposed = true;
+            _connection.Dispose();
+        }
+    }
 }
 
 /// Refreshes the index through a private staging database. Completed scopes are published atomically;
@@ -621,6 +670,38 @@ public sealed class LibraryIndexer
     /// Directory for private staging databases. Defaults to the system temporary folder.
     public string? StagingDirectory { get; init; }
 
+    /// Deletes "Myra-staging-*" folders left by a crash. A folder is removed only when none of its
+    /// files changed for minimumAge (default 1 hour); locked files (Windows) make the delete fail
+    /// harmlessly. Returns the number of folders removed.
+    public static int CleanStaleStaging(string? directory = null, TimeSpan? minimumAge = null, DateTime? nowUtc = null)
+    {
+        var limit = (nowUtc ?? DateTime.UtcNow) - (minimumAge ?? TimeSpan.FromHours(1));
+        var removed = 0;
+        try
+        {
+            foreach (var folder in Directory.EnumerateDirectories(directory ?? Path.GetTempPath(), "Myra-staging-*"))
+            {
+                try
+                {
+                    var info = new DirectoryInfo(folder);
+                    if (info.LinkTarget is not null) continue;
+                    var newest = info.EnumerateFiles("*", SearchOption.AllDirectories)
+                        .Select(f => f.LastWriteTimeUtc).Append(info.LastWriteTimeUtc).Max();
+                    if (newest > limit) continue;
+                    info.Delete(recursive: true);
+                    removed++;
+                }
+                catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+                {
+                }
+            }
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+        {
+        }
+        return removed;
+    }
+
     /// Refreshes the selected scopes (default: every source root). Roots must contain every configured
     /// source because they also drive source synchronization.
     public async Task<GlobalSearchSnapshot> RefreshAsync(
@@ -636,7 +717,7 @@ public sealed class LibraryIndexer
         bool full = false,
         Func<CancellationToken, Task>? beforeBatch = null)
     {
-        await Task.Run(() => index.SynchronizeSources(roots), cancellationToken);
+        await Task.Run(() => index.SynchronizeSources(roots), cancellationToken).ConfigureAwait(false);
         var selected = IndexScope.Compact(scopes ?? roots.Select(IndexScope.ForRoot).ToList())
             .Where(s => roots.Any(r => r.Id == s.Root.Id)).ToList();
         Summary = new IndexRefreshSummary();
@@ -669,12 +750,12 @@ public sealed class LibraryIndexer
                     concurrencyLimit: concurrencyLimit,
                     cancellationToken: cancellationToken,
                     scopes: selected,
-                    beforeBatch: beforeBatch);
+                    beforeBatch: beforeBatch).ConfigureAwait(false);
                 cancellationToken.ThrowIfCancellationRequested();
             }
             var failed = snapshot.Failures.Select(f => f.CategoryId).ToHashSet();
             var publishable = selected.Where(s => !failed.Contains(s.Root.Id)).ToList();
-            var summary = await Task.Run(() => index.Publish(stagingPath, publishable, cancellationToken), cancellationToken);
+            var summary = await Task.Run(() => index.Publish(stagingPath, publishable, cancellationToken), cancellationToken).ConfigureAwait(false);
             if (loader is not null)
             {
                 summary.Checked = loader.CheckedFolders;
@@ -689,8 +770,9 @@ public sealed class LibraryIndexer
             {
                 Directory.Delete(folder, recursive: true);
             }
-            catch (IOException)
+            catch (Exception error) when (error is IOException or UnauthorizedAccessException)
             {
+                // CleanStaleStaging removes it at a later start.
             }
         }
     }
