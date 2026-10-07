@@ -278,6 +278,9 @@ public sealed partial class AppSettings : ObservableObject
     [ObservableProperty] private IndexingMode _indexingMode = IndexingMode.Balanced;
     /// Global search tolerates typos and reordered words. Off means exact substring matching.
     [ObservableProperty] private bool _fuzzyGlobalSearch = true;
+    /// Window and taskbar icon: a MyraIconFamily name and a MyraIconVariant name (see MyraIcons).
+    [ObservableProperty] private string _iconFamily = MyraIcons.DefaultFamily;
+    [ObservableProperty] private string _iconVariant = MyraIcons.DefaultVariant;
 
     public void Clamp()
     {
