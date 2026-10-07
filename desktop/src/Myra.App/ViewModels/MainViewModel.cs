@@ -579,7 +579,7 @@ public sealed partial class MainViewModel : ObservableObject
             if (debounce) await Task.Delay(150, token);
             var offset = _globalOffset;
             var fuzzy = FuzzyGlobalSearch;
-            var page = await Task.Run(() => _services.Index.Search(query, 500, offset, fuzzy), token);
+            var page = await Task.Run(() => _services.Index.Search(query, 500, offset, fuzzy, token), token);
             if (token.IsCancellationRequested) return;
             foreach (var result in page)
             {

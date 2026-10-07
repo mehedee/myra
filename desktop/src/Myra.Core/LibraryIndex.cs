@@ -12,7 +12,8 @@ public sealed class LibraryIndexException(string message, Exception? inner = nul
 /// v3 adds folders (directory snapshots) and index_state (catalogue revision); v4 adds the fuzzy-search
 /// documents (search_documents, an FTS5 unicode61 trigram index kept current by SQL triggers, and a
 /// search_dirty queue). An older index is backed up with the SQLite backup API to "{path}.v{N}-backup"
-/// (written to ".tmp", verified, then renamed) before it is migrated in place in one transaction.
+/// (written to ".tmp", verified, then renamed; an older backup moves to ".previous") before it is
+/// migrated in place in one transaction. The upgrade first checks for free space (RequiredUpgradeSpace).
 public sealed class LibraryIndex : IDisposable
 {
     public const int SchemaVersion = 4;
@@ -22,7 +23,12 @@ public sealed class LibraryIndex : IDisposable
     private readonly bool _hasTrigram;
     private readonly bool _hasSearchSchema;
 
-    public LibraryIndex(string path, bool searchable = true)
+    public LibraryIndex(string path, bool searchable = true) : this(path, searchable, AvailableFreeSpace)
+    {
+    }
+
+    /// freeSpace: free bytes on the volume that holds a directory, or null when unknown (tests replace it).
+    internal LibraryIndex(string path, bool searchable, Func<string, long?> freeSpace)
     {
         Path = System.IO.Path.GetFullPath(path);
         var directory = System.IO.Path.GetDirectoryName(Path)!;
@@ -34,7 +40,12 @@ public sealed class LibraryIndex : IDisposable
             Execute("PRAGMA busy_timeout=3000");
             var version = Convert.ToInt32(Scalar("PRAGMA user_version"));
             if (version > SchemaVersion) throw new LibraryIndexException("This index was created by a newer Myra version.");
-            if (version is > 0 and < SchemaVersion) Backup(version);
+            if (version is > 0 and < SchemaVersion)
+            {
+                // Checked before anything is written: a full disk must not leave a half backup or migration.
+                RequireFreeSpace(directory, freeSpace);
+                Backup(version);
+            }
             _hasTrigram = Migrate(searchable);
             _hasSearchSchema = searchable;
         }
@@ -62,20 +73,64 @@ public sealed class LibraryIndex : IDisposable
         return connection;
     }
 
+    /// Free space needed to upgrade an older index: twice the index (main file plus WAL). The backup
+    /// takes about one index size; the search documents add about 0.75 of it (measured on 113,836 videos).
+    internal static long RequiredUpgradeSpace(string path)
+    {
+        long Size(string file) => File.Exists(file) ? new FileInfo(file).Length : 0;
+        return 2 * (Size(path) + Size(path + "-wal"));
+    }
+
+    private void RequireFreeSpace(string directory, Func<string, long?> freeSpace)
+    {
+        var required = RequiredUpgradeSpace(Path);
+        if (freeSpace(directory) is not { } available || available >= required) return;
+        throw new LibraryIndexException(
+            $"Not enough free disk space to upgrade the index. Myra needs about {Megabytes(required)} free on the drive that holds "
+            + $"{directory}; {Megabytes(available)} is free. Free some space, then restart Myra. Nothing was changed.");
+    }
+
+    private static string Megabytes(long bytes) => $"{Math.Ceiling(bytes / 1048576.0):0} MB";
+
+    private static long? AvailableFreeSpace(string directory)
+    {
+        try
+        {
+            return new DriveInfo(directory).AvailableFreeSpace;
+        }
+        catch (Exception error) when (error is IOException or ArgumentException or UnauthorizedAccessException)
+        {
+            return null;
+        }
+    }
+
     /// Backup includes committed WAL pages, unlike copying the database file. The copy is written to
     /// "{backup}.tmp", verified, and only then renamed, so an interrupted backup is never trusted.
-    /// An existing backup is kept only when it verifies; otherwise it is recreated.
+    /// Every migration takes a fresh backup: an older backup can be weeks out of date. The previous
+    /// backup is kept as "{backup}.previous" until the next migration.
     private void Backup(int version)
     {
         var backupPath = Path + $".v{version}-backup";
-        if (File.Exists(backupPath) && IsValidBackup(backupPath, version)) return;
         var temporary = backupPath + ".tmp";
         try
         {
             DeleteDatabaseFiles(temporary);
             using (var destination = Open(temporary))
+            {
                 _connection.BackupDatabase(destination);
+                // A rollback-journal file opens read-only without -wal/-shm side files.
+                using var journal = destination.CreateCommand();
+                journal.CommandText = "PRAGMA journal_mode=DELETE";
+                journal.ExecuteNonQuery();
+            }
             if (!IsValidBackup(temporary, version)) throw new LibraryIndexException("The backup copy did not pass verification.");
+            if (File.Exists(backupPath))
+            {
+                var previous = backupPath + ".previous";
+                DeleteDatabaseFiles(previous);
+                foreach (var suffix in new[] { "", "-wal", "-shm", "-journal" })
+                    if (File.Exists(backupPath + suffix)) File.Move(backupPath + suffix, previous + suffix);
+            }
             File.Move(temporary, backupPath, overwrite: true);
         }
         catch (Exception error)
@@ -91,12 +146,12 @@ public sealed class LibraryIndex : IDisposable
         }
     }
 
-    /// True when the file opens as SQLite, passes quick_check and has the expected schema version.
+    /// True when the file opens read-only as SQLite, passes quick_check and has the expected schema version.
     internal static bool IsValidBackup(string path, int version)
     {
         try
         {
-            using var connection = Open(path, SqliteOpenMode.ReadWrite);
+            using var connection = Open(path, SqliteOpenMode.ReadOnly);
             using var check = connection.CreateCommand();
             check.CommandText = "PRAGMA quick_check";
             if (check.ExecuteScalar() as string != "ok") return false;
@@ -488,7 +543,9 @@ public sealed class LibraryIndex : IDisposable
     /// Global search. Fuzzy (default) tolerates typos and reordered words and ranks exact phrases first;
     /// exact requires the whole normalized query as a substring. Both are deterministic, so
     /// limit/offset pages never repeat or skip a result.
-    public List<GlobalSearchResult> Search(string rawQuery, int limit = 500, int offset = 0, bool fuzzy = true)
+    /// cancellationToken stops the build of queued search documents (first search after an upgrade).
+    public List<GlobalSearchResult> Search(string rawQuery, int limit = 500, int offset = 0, bool fuzzy = true,
+        CancellationToken cancellationToken = default)
     {
         var query = rawQuery.Trim();
         if (query.Length < 3) throw new GlobalSearchException(GlobalSearchErrorKind.QueryTooShort);
@@ -499,9 +556,10 @@ public sealed class LibraryIndex : IDisposable
         var approximate = fuzzy && indexed;
         var pageSize = Math.Clamp(limit, 1, 500);
         var start = Math.Max(0, offset);
+        BuildPendingSearchDocuments(cancellationToken);
+        cancellationToken.ThrowIfCancellationRequested();
         lock (_lock)
         {
-            BuildPendingSearchDocuments();
             var source = indexed
                 ? "videos JOIN search_documents d ON videos.category=d.category AND videos.url=d.url JOIN search_document_fts f ON d.rowid=f.rowid"
                 : "videos JOIN search_documents d ON videos.category=d.category AND videos.url=d.url";
@@ -530,7 +588,7 @@ public sealed class LibraryIndex : IDisposable
             if (!approximate) return results;
             if (results.Count == FuzzyCandidateLimit
                 && Convert.ToInt64(Scalar("SELECT COUNT(*) FROM search_documents WHERE instr(normalized,$a)>0", normalized)) >= FuzzyCandidateLimit)
-                return Search(rawQuery, limit, offset, fuzzy: false);
+                return Search(rawQuery, limit, offset, fuzzy: false, cancellationToken);
 
             return results
                 .Select(result => (Result: result, Score: new[] { result.Entry.Name }
@@ -544,85 +602,116 @@ public sealed class LibraryIndex : IDisposable
     }
 
     /// Indexes new and renamed filenames in batches of 500. Query time never rereads the whole catalogue.
-    /// Safe to call from a background task: it is a no-op when nothing is queued.
-    public void BuildSearchDocuments(CancellationToken cancellationToken = default)
-    {
-        lock (_lock) BuildPendingSearchDocuments(cancellationToken);
-    }
+    /// Safe to call from a background task: it is a no-op when nothing is queued. The index lock is
+    /// released between batches, so playback positions and searches never wait for a whole build.
+    public void BuildSearchDocuments(CancellationToken cancellationToken = default) => BuildPendingSearchDocuments(cancellationToken);
 
-    private void BuildPendingSearchDocuments(CancellationToken cancellationToken = default)
+    /// Alias text by (category, url) while SaveSearchAliases runs. Any build in that time (also one
+    /// started by Search) writes the aliases at once, so a document is not built twice.
+    private volatile IReadOnlyDictionary<(string Category, string Url), string>? _aliasHint;
+
+    private void BuildPendingSearchDocuments(CancellationToken cancellationToken)
     {
         if (!_hasSearchSchema) return;
         while (true)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var rows = new List<(string Category, string Url, string Name, string Aliases)>();
-            using (var pending = Command("""
-                SELECT v.category,v.url,v.name,COALESCE(d.aliases,'') FROM search_dirty q
-                JOIN videos v ON v.category=q.category AND v.url=q.url
-                LEFT JOIN search_documents d ON d.category=v.category AND d.url=v.url LIMIT 500
-                """))
-            using (var reader = pending.ExecuteReader())
-                while (reader.Read()) rows.Add((reader.GetString(0), reader.GetString(1), reader.GetString(2), reader.GetString(3)));
-            if (rows.Count == 0) return;
-            Transaction(() =>
-            {
-                using var insert = Command("""
-                    INSERT INTO search_documents(category,url,name,aliases,normalized,grams) VALUES($a,$b,$c,$d,$e,$f)
-                    ON CONFLICT(category,url) DO UPDATE SET name=excluded.name,aliases=excluded.aliases,
-                      normalized=excluded.normalized,grams=excluded.grams
-                    """);
-                var values = "abcdef".Select(c => insert.Parameters.Add("$" + c, SqliteType.Text)).ToArray();
-                using var remove = Command("DELETE FROM search_dirty WHERE category=$a AND url=$b");
-                var keys = "ab".Select(c => remove.Parameters.Add("$" + c, SqliteType.Text)).ToArray();
-                foreach (var row in rows)
-                {
-                    var text = row.Name + " " + row.Aliases;
-                    string[] fields = [row.Category, row.Url, row.Name, row.Aliases, FuzzySearch.Normalize(text), FuzzySearch.IndexGrams(text)];
-                    for (var i = 0; i < fields.Length; i++) values[i].Value = fields[i];
-                    insert.ExecuteNonQuery();
-                    keys[0].Value = row.Category;
-                    keys[1].Value = row.Url;
-                    remove.ExecuteNonQuery();
-                }
-            });
+            lock (_lock)
+                if (!BuildSearchDocumentBatch(cancellationToken)) return;
         }
     }
 
+    /// Builds up to 500 queued documents in one transaction. False when the queue is empty.
+    private bool BuildSearchDocumentBatch(CancellationToken cancellationToken)
+    {
+        var hint = _aliasHint;
+        var rows = new List<(string Category, string Url, string Name, string Aliases)>();
+        using (var pending = Command("""
+            SELECT v.category,v.url,v.name,COALESCE(d.aliases,'') FROM search_dirty q
+            JOIN videos v ON v.category=q.category AND v.url=q.url
+            LEFT JOIN search_documents d ON d.category=v.category AND d.url=v.url LIMIT 500
+            """))
+        using (var reader = pending.ExecuteReader())
+            while (reader.Read())
+            {
+                var (category, url) = (reader.GetString(0), reader.GetString(1));
+                var aliases = hint is not null && hint.TryGetValue((category, url), out var known) ? known : reader.GetString(3);
+                rows.Add((category, url, reader.GetString(2), aliases));
+            }
+        if (rows.Count == 0) return false;
+        Transaction(() =>
+        {
+            using var insert = Command("""
+                INSERT INTO search_documents(category,url,name,aliases,normalized,grams) VALUES($a,$b,$c,$d,$e,$f)
+                ON CONFLICT(category,url) DO UPDATE SET name=excluded.name,aliases=excluded.aliases,
+                  normalized=excluded.normalized,grams=excluded.grams
+                """);
+            var values = "abcdef".Select(c => insert.Parameters.Add("$" + c, SqliteType.Text)).ToArray();
+            using var remove = Command("DELETE FROM search_dirty WHERE category=$a AND url=$b");
+            var keys = "ab".Select(c => remove.Parameters.Add("$" + c, SqliteType.Text)).ToArray();
+            foreach (var row in rows)
+            {
+                var text = row.Name + " " + row.Aliases;
+                string[] fields = [row.Category, row.Url, row.Name, row.Aliases, FuzzySearch.Normalize(text), FuzzySearch.IndexGrams(text)];
+                for (var i = 0; i < fields.Length; i++) values[i].Value = fields[i];
+                insert.ExecuteNonQuery();
+                keys[0].Value = row.Category;
+                keys[1].Value = row.Url;
+                remove.ExecuteNonQuery();
+            }
+        }, cancellationToken);
+        return true;
+    }
+
+    /// The alias text stored for one title: its display name and the provider title.
+    internal static string AliasText(EntertainmentTitle title) =>
+        string.Join('\n', new[] { title.Name, title.Metadata?.Title ?? "" }.Where(name => name.Length > 0));
+
     /// Associates provider and corrected display titles with the original file identities so Global
     /// search finds "Amelie" for "Le.Fabuleux.Destin.2001.mkv". Idempotent; unchanged aliases cost no write.
+    /// Queued documents (after an upgrade: the whole catalogue) are built once, with their aliases.
+    /// Afterwards only documents whose alias text changed are queued and rebuilt.
     public void SaveSearchAliases(IEnumerable<EntertainmentTitle> titles, CancellationToken cancellationToken = default)
     {
-        foreach (var chunk in titles.Chunk(2000))
+        if (!_hasSearchSchema) return;
+        var aliases = new Dictionary<(string Category, string Url), string>();
+        foreach (var title in titles)
         {
-            lock (_lock)
+            var alias = AliasText(title);
+            foreach (var version in title.Versions)
+                aliases[(SourceKey(version.Media.CategoryId), version.Media.Entry.Url.AbsoluteUri)] = alias;
+        }
+        _aliasHint = aliases;
+        try
+        {
+            BuildPendingSearchDocuments(cancellationToken);
+            foreach (var chunk in aliases.Chunk(2000))
             {
-                BuildPendingSearchDocuments(cancellationToken);
-                if (!_hasSearchSchema) return;
-                Transaction(() =>
-                {
-                    using var update = Command("UPDATE search_documents SET aliases=$a WHERE category=$b AND url=$c AND aliases<>$a");
-                    var parameters = "abc".Select(c => update.Parameters.Add("$" + c, SqliteType.Text)).ToArray();
-                    using var dirty = Command("INSERT OR IGNORE INTO search_dirty VALUES($a,$b)");
-                    var keys = "ab".Select(c => dirty.Parameters.Add("$" + c, SqliteType.Text)).ToArray();
-                    foreach (var title in chunk)
+                cancellationToken.ThrowIfCancellationRequested();
+                lock (_lock)
+                    Transaction(() =>
                     {
-                        var alias = string.Join('\n', new[] { title.Name, title.Metadata?.Title ?? "" }.Where(name => name.Length > 0));
-                        foreach (var version in title.Versions)
+                        using var update = Command("UPDATE search_documents SET aliases=$a WHERE category=$b AND url=$c AND aliases<>$a");
+                        var parameters = "abc".Select(c => update.Parameters.Add("$" + c, SqliteType.Text)).ToArray();
+                        using var dirty = Command("INSERT OR IGNORE INTO search_dirty VALUES($a,$b)");
+                        var keys = "ab".Select(c => dirty.Parameters.Add("$" + c, SqliteType.Text)).ToArray();
+                        foreach (var ((category, url), alias) in chunk)
                         {
-                            cancellationToken.ThrowIfCancellationRequested();
                             parameters[0].Value = alias;
-                            parameters[1].Value = SourceKey(version.Media.CategoryId);
-                            parameters[2].Value = version.Media.Entry.Url.AbsoluteUri;
+                            parameters[1].Value = category;
+                            parameters[2].Value = url;
                             if (update.ExecuteNonQuery() == 0) continue;
-                            keys[0].Value = parameters[1].Value;
-                            keys[1].Value = parameters[2].Value;
+                            keys[0].Value = category;
+                            keys[1].Value = url;
                             dirty.ExecuteNonQuery();
                         }
-                    }
-                }, cancellationToken);
-                BuildPendingSearchDocuments(cancellationToken);
+                    }, cancellationToken);
             }
+            BuildPendingSearchDocuments(cancellationToken);
+        }
+        finally
+        {
+            if (ReferenceEquals(_aliasHint, aliases)) _aliasHint = null;
         }
     }
 

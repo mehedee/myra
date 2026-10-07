@@ -255,6 +255,127 @@ public sealed class FuzzySearchTests : IDisposable
         Assert.False(File.Exists(future + ".v5-backup"));
     }
 
+    /// Review finding: a weeks-old valid backup was kept instead of a fresh one.
+    [Fact]
+    public void EveryUpgradeTakesAFreshBackupAndKeepsThePreviousOne()
+    {
+        var path = DatabasePath();
+        var backup = path + ".v3-backup";
+        CreateV3(backup, 2);
+        CreateV3(path, 9);
+        using (new LibraryIndex(path)) { }
+        Assert.Equal(9L, Scalar(backup, "SELECT COUNT(*) FROM videos"));
+        Assert.Equal(3L, Scalar(backup, "PRAGMA user_version"));
+        Assert.Equal("delete", Scalar(backup, "PRAGMA journal_mode"));
+        Assert.True(LibraryIndex.IsValidBackup(backup, 3));
+        Assert.Equal(2L, Scalar(backup + ".previous", "SELECT COUNT(*) FROM videos"));
+        Assert.False(File.Exists(backup + ".tmp"));
+    }
+
+    [Fact]
+    public void BackupVerificationOpensReadOnly()
+    {
+        var path = DatabasePath();
+        CreateV3(path, 1);
+        var before = File.GetLastWriteTimeUtc(path);
+        File.SetAttributes(path, FileAttributes.ReadOnly);
+        try
+        {
+            Assert.True(LibraryIndex.IsValidBackup(path, 3));
+        }
+        finally
+        {
+            File.SetAttributes(path, FileAttributes.Normal);
+        }
+        Assert.Equal(before, File.GetLastWriteTimeUtc(path));
+        Assert.False(LibraryIndex.IsValidBackup(path, 4));
+    }
+
+    /// Review finding: no free-space check before the backup and migration.
+    [Fact]
+    public void UpgradeWithoutEnoughFreeSpaceChangesNothing()
+    {
+        var path = DatabasePath();
+        CreateV3(path, 20);
+        var required = LibraryIndex.RequiredUpgradeSpace(path);
+        Assert.True(required >= 2 * new FileInfo(path).Length);
+        var error = Assert.Throws<LibraryIndexException>(() => new LibraryIndex(path, true, _ => required - 1));
+        Assert.Contains("Not enough free disk space", error.Message);
+        Assert.Contains("Nothing was changed", error.Message);
+        Assert.Equal(3L, Scalar(path, "PRAGMA user_version"));
+        Assert.Null(Scalar(path, "SELECT 1 FROM sqlite_master WHERE name='search_documents'"));
+        Assert.False(File.Exists(path + ".v3-backup"));
+        Assert.False(File.Exists(path + ".v3-backup.tmp"));
+
+        // Enough space, or an unknown amount (network drive): the upgrade runs.
+        using (new LibraryIndex(path, true, _ => null)) { }
+        Assert.Equal(4L, Scalar(path, "PRAGMA user_version"));
+        // A current index needs no space check.
+        using (new LibraryIndex(path, true, _ => 0)) { }
+    }
+
+    /// Review finding: after an upgrade every document was built twice (without, then with aliases).
+    [Fact]
+    public void FirstAliasSaveBuildsEachDocumentOnce()
+    {
+        var path = DatabasePath();
+        CreateV3(path, 30);
+        using var index = new LibraryIndex(path);
+        Raw(path, """
+            CREATE TABLE document_writes(kind TEXT);
+            CREATE TRIGGER count_document_insert AFTER INSERT ON search_documents BEGIN INSERT INTO document_writes VALUES('insert'); END;
+            CREATE TRIGGER count_document_update AFTER UPDATE ON search_documents BEGIN INSERT INTO document_writes VALUES('update'); END;
+            """);
+        var titles = index.Inventory().Select((version, offset) => new EntertainmentTitle($"movie|{offset}", $"Movie {offset}", null,
+            EntertainmentKind.Movie, [version]) { Metadata = new EntertainmentMetadata { Title = $"Kosmonaut {offset}" } }).ToList();
+
+        index.SaveSearchAliases(titles);
+        Assert.Equal(30L, Scalar(path, "SELECT COUNT(*) FROM document_writes WHERE kind='insert'"));
+        Assert.Equal(0L, Scalar(path, "SELECT COUNT(*) FROM document_writes WHERE kind='update'"));
+        Assert.Equal(0L, Scalar(path, "SELECT COUNT(*) FROM search_dirty"));
+        Assert.Single(index.Search("kosmonaut 17", fuzzy: false));
+
+        // Unchanged aliases cost no write; one changed title rebuilds only its document.
+        index.SaveSearchAliases(titles);
+        Assert.Equal(30L, Scalar(path, "SELECT COUNT(*) FROM document_writes"));
+        titles[4] = titles[4] with { Metadata = new EntertainmentMetadata { Title = "Astronaut Four" } };
+        index.SaveSearchAliases(titles);
+        Assert.Equal(2L, Scalar(path, "SELECT COUNT(*) FROM document_writes WHERE kind='update'"));
+        Assert.Single(index.Search("astronaut four", fuzzy: false));
+    }
+
+    /// Review finding: Search built queued documents without a cancellation token while holding the lock.
+    [Fact]
+    public void SearchDocumentBuildIsCancellableAndSafeAlongsideOtherCalls()
+    {
+        var path = DatabasePath();
+        CreateV3(path, 1200);
+        using var index = new LibraryIndex(path);
+        using var cancelled = new CancellationTokenSource();
+        cancelled.Cancel();
+        Assert.ThrowsAny<OperationCanceledException>(() => index.Search("interstellar", cancellationToken: cancelled.Token));
+        Assert.Equal(1200L, Scalar(path, "SELECT COUNT(*) FROM search_dirty"));
+
+        // Other calls run between 500-row batches while a background build continues.
+        using var stop = new CancellationTokenSource();
+        var build = Task.Run(() =>
+        {
+            try
+            {
+                index.BuildSearchDocuments(stop.Token);
+            }
+            catch (OperationCanceledException)
+            {
+            }
+        });
+        var url = new Uri("https://example.com/movies/m1.mkv");
+        index.SavePlaybackPosition(url, 12, 100);
+        Assert.Equal(12, index.PlaybackPosition(url));
+        build.Wait(TimeSpan.FromSeconds(30));
+        Assert.Equal(500, index.Search("intersteller").Count);
+        Assert.Equal(1200L, Scalar(path, "SELECT COUNT(*) FROM search_documents"));
+    }
+
     [Fact]
     public void LargeCatalogueFuzzySearchBenchmark()
     {

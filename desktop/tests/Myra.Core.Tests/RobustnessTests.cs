@@ -141,14 +141,15 @@ public sealed class RobustnessTests : IDisposable
     }
 
     [Fact]
-    public void ValidExistingBackupIsKept()
+    public void ValidExistingBackupIsReplacedByAFreshOneAndKeptAsPrevious()
     {
         var path = File("LibraryIndex.sqlite");
         CreateV2Index(path, 3);
         var backup = path + ".v2-backup";
         CreateV2Index(backup, 7);
         using (var index = new LibraryIndex(path)) Assert.Equal(3, index.VideoCount());
-        Assert.Equal(7, Count(backup));
+        Assert.Equal(3, Count(backup));
+        Assert.Equal(7, Count(backup + ".previous"));
     }
 
     [Fact]
