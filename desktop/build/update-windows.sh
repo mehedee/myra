@@ -41,6 +41,8 @@ mkdir -p "$INSTALL"
 rsync -a --delete "$NEW/" "$INSTALL/"
 
 WIN_INSTALL=$(wslpath -w "$INSTALL")
+# Start Menu shortcut, so Windows Search and the Start Menu find Myra.
+ps "\$s = (New-Object -ComObject WScript.Shell).CreateShortcut((Join-Path \$env:APPDATA 'Microsoft\\Windows\\Start Menu\\Programs\\Myra.lnk')); \$s.TargetPath = '$WIN_INSTALL\\Myra.exe'; \$s.WorkingDirectory = '$WIN_INSTALL'; \$s.IconLocation = '$WIN_INSTALL\\Myra.exe,0'; \$s.Description = 'Myra - browse, stream and download your media'; \$s.Save()"
 echo "Starting Myra…"
 ps "Start-Process -FilePath '$WIN_INSTALL\\Myra.exe' -WorkingDirectory '$WIN_INSTALL'"
 echo "Installed $INSTALL ($(git describe --always --dirty))."

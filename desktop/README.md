@@ -60,7 +60,8 @@ build/             Windows and Linux packaging, Linux installer, packaged-app sm
 ## Update an installed copy (from WSL)
 
 `./build/update-windows.sh [install-dir]` (default `D:\tdw\Myra-win-x64`) builds the zip, closes Myra,
-keeps an existing install as `<install-dir>.previous`, copies the new build in and starts it.
+keeps an existing install as `<install-dir>.previous`, copies the new build in, adds a Start Menu
+shortcut (so Windows Search finds Myra) and starts it.
 On the first run it copies a former SamBD profile (`%APPDATA%\SamBD`) to `%APPDATA%\Myra` with
 `build/migrate-profile.py`; the SamBD profile and install are left unchanged for rollback.
 The first start migrates the index to schema 4 and keeps a fresh `LibraryIndex.sqlite.v3-backup`
