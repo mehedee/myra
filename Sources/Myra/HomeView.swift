@@ -16,6 +16,7 @@ struct HomeView: View {
   @State private var choosing: EntertainmentTitle?
   @State private var pendingChoice: EntertainmentTitle?
   @State private var showingCollections = false
+  @State private var confirmingClearContinueWatching = false
   @State private var showingTransfer = false
   @State private var pickPresentation: EntertainmentPickPresentation?
   @State private var showingAI = false
@@ -44,6 +45,12 @@ struct HomeView: View {
   private var latest: [EntertainmentTitle] { prepared.latest }
   private var watchlist: [EntertainmentTitle] { prepared.watchlist }
 
+  init(coordinator: AppCoordinator, store: EntertainmentStore, initialQuery: String = "") {
+    self.coordinator = coordinator
+    self.store = store
+    _query = State(initialValue: initialQuery)
+  }
+
   var body: some View {
     ScrollView {
       VStack(alignment: .leading, spacing: 24) {
@@ -65,6 +72,11 @@ struct HomeView: View {
           )
           .frame(minHeight: 280)
         } else {
+          if !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && filtered.isEmpty
+            && preparedFilter == filter
+          {
+            ContentUnavailableView.search(text: query)
+          }
           shelf(
             "Continue Watching", subtitle: "Resume unfinished movies and episodes",
             titles: filtered.filter {
@@ -153,6 +165,19 @@ struct HomeView: View {
     .sheet(isPresented: $showingCollections) { EntertainmentCollectionsView(store: store) }
     .sheet(isPresented: $showingTransfer) {
       EntertainmentTransferView(coordinator: coordinator, store: store)
+    }
+    .confirmationDialog(
+      "Clear Continue Watching?", isPresented: $confirmingClearContinueWatching,
+      titleVisibility: .visible
+    ) {
+      Button("Clear Continue Watching", role: .destructive) {
+        Task { await store.clearContinueWatching() }
+      }
+      Button("Cancel", role: .cancel) {}
+    } message: {
+      Text(
+        "Remove unfinished resume entries from all sources? Your files, watched status, watchlist and collections will not be deleted. Current playback will continue."
+      )
     }
   }
 
@@ -248,38 +273,52 @@ struct HomeView: View {
     }.labelsHidden().frame(width: label == "Language" ? 125 : 110)
   }
 
+  @ViewBuilder
   private func shelf(_ name: String, subtitle: String, titles: [EntertainmentTitle]) -> some View {
-    VStack(alignment: .leading, spacing: 10) {
-      HStack {
-        Text(name).font(.title2.bold())
-        Text("\(titles.count)").foregroundStyle(.secondary)
-        Spacer()
-        if titles.count > 60 {
-          Button(expandedShelves.contains(name) ? "Show fewer" : "Show all") {
-            if !expandedShelves.insert(name).inserted { expandedShelves.remove(name) }
-          }.font(.caption)
+    if HomeShelfPresentation.isVisible(count: titles.count, query: query) {
+      VStack(alignment: .leading, spacing: 10) {
+        HStack {
+          Text(name).font(.title2.bold())
+          Text("\(titles.count)").foregroundStyle(.secondary)
+          Spacer()
+          if name == "Continue Watching" {
+            Button("Clear") { confirmingClearContinueWatching = true }
+              .disabled(
+                store.isClearingContinueWatching
+                  || !store.catalogue.contains {
+                    $0.resumeVersion != nil && !store.personal.watched.contains($0.id)
+                  }
+              )
+              .accessibilityLabel("Clear Continue Watching")
+          }
+          if titles.count > 60 {
+            Button(expandedShelves.contains(name) ? "Show fewer" : "Show all") {
+              if !expandedShelves.insert(name).inserted { expandedShelves.remove(name) }
+            }.font(.caption)
+          }
         }
-      }
-      Text(subtitle).font(.caption).foregroundStyle(.secondary)
-      if titles.isEmpty {
-        Text(
-          name == "Top Rated Movies" || name == "Latest Releases"
-            ? "No matched titles for these filters. Add a TMDB key in Settings and update metadata."
-            : "No titles here yet. Try adjusting your filters."
-        )
-        .foregroundStyle(.secondary).padding(.vertical, 12)
-      } else {
-        ScrollView(.horizontal) {
-          LazyHStack(alignment: .top, spacing: 16) {
-            ForEach(expandedShelves.contains(name) ? titles : Array(titles.prefix(60))) { title in
-              EntertainmentCard(
-                title: title, store: store,
-                play: { start(title) }, details: { details = title })
-            }
-          }.padding(.bottom, 6)
+        Text(subtitle).font(.caption).foregroundStyle(.secondary)
+        if titles.isEmpty {
+          Text(
+            name == "Top Rated Movies" || name == "Latest Releases"
+              ? "No matched titles for these filters. Add a TMDB key in Settings and update metadata."
+              : "No titles here yet. Try adjusting your filters."
+          )
+          .foregroundStyle(.secondary).padding(.vertical, 12)
+        } else {
+          ScrollView(.horizontal) {
+            LazyHStack(alignment: .top, spacing: 16) {
+              ForEach(expandedShelves.contains(name) ? titles : Array(titles.prefix(60))) { title in
+                EntertainmentCard(
+                  title: title, store: store,
+                  play: { start(title) }, details: { details = title })
+              }
+            }.padding(.bottom, 6)
+          }
         }
       }
     }
+
   }
 
   private func start(_ title: EntertainmentTitle, resume: Bool = true) {
@@ -441,6 +480,12 @@ private struct EntertainmentCard: View {
         }.menuStyle(.borderlessButton).menuIndicator(.hidden).frame(width: 22)
       }
     }.frame(width: 170)
+  }
+}
+
+enum HomeShelfPresentation {
+  static func isVisible(count: Int, query: String) -> Bool {
+    count > 0 || query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
   }
 }
 

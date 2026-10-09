@@ -40,6 +40,85 @@ final class EntertainmentStore: ObservableObject {
   private let service = DiscoveryService()
   private let automaticEnrichment: Bool
   private var canWrite = true
+  @Published private(set) var isClearingContinueWatching = false
+  private var clearedPlaybackIDs: Set<String> = []
+
+  func beginPlayback(_ media: GlobalSearchResult) {
+    clearedPlaybackIDs.remove(media.entry.url.absoluteString)
+  }
+  func shouldRecordPlayback(_ media: GlobalSearchResult) -> Bool {
+    !isClearingContinueWatching && !clearedPlaybackIDs.contains(media.entry.url.absoluteString)
+  }
+
+  /// Clears unfinished resume records in both durable stores, without touching media or watched state.
+  func clearContinueWatching() async {
+    guard !isClearingContinueWatching else { return }
+    guard canWrite, let url else {
+      errorMessage = "Personal data is read-only; Continue Watching was not cleared."
+      return
+    }
+    isClearingContinueWatching = true
+    defer { isClearingContinueWatching = false }
+    var previous = personal
+    let previousSuppressed = clearedPlaybackIDs
+    var clearedIDs: Set<String> = []
+    var wrotePersonal = false
+    do {
+      let index = try await library.database()
+      let inventory = try await index.inventory()
+      let titles = EntertainmentGrouping.group(inventory, corrections: personal.matchCorrections)
+      let watchedURLs = Set(
+        titles.filter { personal.watched.contains($0.id) }.flatMap { $0.versions.map(\.id) })
+      var ids = Set(
+        personal.history.filter {
+          !watchedURLs.contains($0.key)
+            && Self.isUnfinished(seconds: $0.value.seconds, duration: $0.value.duration)
+        }.keys)
+      ids.formUnion(
+        inventory.filter {
+          !watchedURLs.contains($0.id)
+            && Self.isUnfinished(seconds: $0.progressSeconds, duration: $0.duration)
+        }.map(\.id))
+      previous = personal
+      clearedIDs = ids
+      var updated = personal
+      for id in ids { updated.history.removeValue(forKey: id) }
+      try FileManager.default.createDirectory(
+        at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+      try JSONEncoder().encode(updated).write(to: url, options: .atomic)
+      wrotePersonal = true
+      personal = updated
+      clearedPlaybackIDs.formUnion(ids)
+      try await index.clearPlaybackPositions(ids: ids)
+      for title in catalogue.indices {
+        for version in catalogue[title].versions.indices
+        where ids.contains(catalogue[title].versions[version].id) {
+          catalogue[title].versions[version].progressSeconds = 0
+          catalogue[title].versions[version].duration = 0
+          catalogue[title].versions[version].lastPlayed = nil
+        }
+      }
+      if loading { reloadAgain = true }
+    } catch {
+      clearedPlaybackIDs = previousSuppressed
+      if wrotePersonal {
+        do {
+          var recovered = personal
+          for id in clearedIDs { recovered.history[id] = previous.history[id] }
+          try JSONEncoder().encode(recovered).write(to: url, options: .atomic)
+          personal = recovered
+        } catch {
+          errorMessage =
+            "Clearing failed and personal history recovery failed: \(error.localizedDescription)"
+          return
+        }
+      }
+      errorMessage = "Continue Watching could not be cleared: \(error.localizedDescription)"
+    }
+  }
+  private static func isUnfinished(seconds: Double, duration: Double) -> Bool {
+    seconds >= 5 && (duration == 0 || duration > seconds + 10)
+  }
   private var enrichmentIDs: Set<String> = []
   private let catalogueWorker = EntertainmentCatalogueWorker()
   private var loading = false
@@ -224,6 +303,7 @@ final class EntertainmentStore: ObservableObject {
     Task { await reload() }
   }
   func recordPlayback(media: GlobalSearchResult, seconds: Double, duration: Double) {
+    guard shouldRecordPlayback(media) else { return }
     guard seconds.isFinite, duration.isFinite, seconds >= 0, duration >= 0 else { return }
     let record = EntertainmentPlaybackRecord(seconds: seconds, duration: duration, updated: .now)
     mutate { $0.history[media.entry.url.absoluteString] = record }

@@ -1325,6 +1325,7 @@ struct SettingsView: View {
     Form {
       MediaSettingsSection(library: coordinator.library, refresh: coordinator.refreshLibraryIndex)
       MyraAppearanceSettingsSection()
+      UpdateSettingsSection(updater: coordinator.updater)
       SubtitleSettingsSection()
       DiscoverySettingsSection(store: coordinator.entertainment, player: coordinator.player)
       Section("Downloads") {

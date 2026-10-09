@@ -1,5 +1,14 @@
 # Changelog
 
+## 3.0.2 (build 10) — 2026-10-10
+
+- Add confirmed Continue Watching clearing across personal history, SQLite and Home cache; preserve finished/watched records and active playback.
+- Hide empty Home shelves while searching and show a no-results message without resetting other filters.
+- Integrate pinned Sparkle 2.10.0 for single-stream updates, daily background checks, manual Settings/menu checks, notes, progress and confirmed installation/relaunch.
+- Require signed feeds and archive verification before extraction; disable unattended installs, unsigned-feed fallback and system profiling.
+- Add local-only release-feed preparation using a Myra-scoped Keychain signing key. Nothing is published by build/preparation scripts.
+- Retain ad-hoc distribution and document first-install, update hosting and recovery limitations.
+
 ## 3.0.1 (build 9) — 2026-10-07
 
 - Fix sparse-library and mood-based AI picks: empty/default model filters no longer exclude titles, mood queries rank suggestions, and only request-backed constraints filter results.

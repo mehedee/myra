@@ -95,6 +95,16 @@ final class EntertainmentUISnapshotTests: XCTestCase {
     XCTAssertNotNil(coordinator.entertainment.catalogue.first { $0.id == dune.id }?.resumeVersion)
     let enrichedPick = try XCTUnwrap(coordinator.entertainment.catalogue.first { $0.id == dune.id })
     try await renderHosted(
+      HomeView(coordinator: coordinator, store: coordinator.entertainment, initialQuery: "Dune"),
+      width: 1200, height: 1100, name: "home-search-matches.png")
+    try await renderHosted(
+      HomeView(
+        coordinator: coordinator, store: coordinator.entertainment, initialQuery: "NoMatchingMovie"),
+      width: 1200, height: 850, name: "home-search-empty.png")
+    try await renderHosted(
+      UpdateSettingsSection(updater: coordinator.updater), width: 620, height: 400,
+      name: "update-settings.png")
+    try await renderHosted(
       EntertainmentPickView(
         title: enrichedPick, store: coordinator.entertainment, filters: "all sources",
         anotherPick: {}, play: { _ in }),

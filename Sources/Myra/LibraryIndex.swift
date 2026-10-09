@@ -758,6 +758,21 @@ actor LibraryIndex {
     return seconds
   }
 
+  func clearPlaybackPositions(ids: Set<String>) throws {
+    guard !ids.isEmpty else { return }
+    try transaction {
+      let statement = try prepare("DELETE FROM playback WHERE url=?")
+      defer { sqlite3_finalize(statement) }
+      for id in ids {
+        sqlite3_reset(statement)
+        sqlite3_clear_bindings(statement)
+        bind(id, to: statement, at: 1)
+        try stepDone(statement)
+      }
+      try execute("UPDATE index_state SET revision=revision+1 WHERE id=1")
+    }
+  }
+
   private func transaction(_ body: () throws -> Void) throws {
     try execute("BEGIN IMMEDIATE")
     do {

@@ -31,6 +31,7 @@ xcodebuild -quiet \
 
 mkdir -p "$APP_PATH/Contents/Resources/Licenses"
 cp "$PROJECT_ROOT/Vendor/COPYING.txt" "$APP_PATH/Contents/Resources/Licenses/VLCKit-LGPL-2.1.txt"
+cp "$BUILD_ROOT/DerivedData/SourcePackages/artifacts/sparkle/Sparkle/LICENSE" "$APP_PATH/Contents/Resources/Licenses/Sparkle.txt"
 
 codesign --force --deep --sign - "$APP_PATH"
 codesign --verify --deep --strict --verbose=2 "$APP_PATH"

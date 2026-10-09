@@ -43,6 +43,7 @@ final class AppCoordinator: ObservableObject {
   let library: LibraryController
   let inspector = MediaInspectorModel()
   let player = EmbeddedPlayerModel()
+  let updater = AppUpdater()
   private let personalStorageURL: URL?
   private let automaticEnrichment: Bool
   lazy var entertainment = EntertainmentStore(
@@ -114,6 +115,10 @@ final class AppCoordinator: ObservableObject {
       }
       player.onPlaybackEnded = { [weak self] media in
         self?.entertainment.markPlaybackEnded(media: media)
+      }
+      player.onPlaybackStarted = { [weak self] media in self?.entertainment.beginPlayback(media) }
+      player.shouldRecordPosition = { [weak self] media in
+        self?.entertainment.shouldRecordPlayback(media) ?? true
       }
       library.refresh(
         roots: searchRoots, onlyIfDue: true,

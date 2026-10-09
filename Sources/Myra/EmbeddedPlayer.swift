@@ -125,6 +125,8 @@ final class EmbeddedPlayerModel: ObservableObject {
   private var choosingInitialLocalVersion = false
   @Published var personalState = PlayerPersonalState.load()
   var onPlaybackEnded: ((GlobalSearchResult) -> Void)?
+  var onPlaybackStarted: ((GlobalSearchResult) -> Void)?
+  var shouldRecordPosition: ((GlobalSearchResult) -> Bool)?
   var onPositionChanged: ((GlobalSearchResult, Double, Double) -> Void)?
   private var sequenceTask: Task<PlaybackSequence, Error>?
   private var automaticResumeSeconds: Double?
@@ -318,6 +320,7 @@ final class EmbeddedPlayerModel: ObservableObject {
     isClosing = false
     returnAfterFullscreen = false
     self.media = media
+    onPlaybackStarted?(media)
     fullscreenChrome.update(window: window, fullscreen: isFullscreen)
     manualAudioSelection = false
     manualSubtitleSelection = false
@@ -899,10 +902,12 @@ final class EmbeddedPlayerModel: ObservableObject {
       completed || (!completedCurrentMedia && engine?.state != .ended)
     else { return }
     onPositionChanged?(media, elapsed, duration)
+    guard shouldRecordPosition?(media) != false else { return }
     let seconds = completed ? 0 : elapsed
     let duration = duration
     Task {
       guard let index = try? await library.database() else { return }
+      guard self.shouldRecordPosition?(media) != false else { return }
       try? await index.savePlaybackPosition(
         url: media.entry.url, seconds: seconds, duration: duration)
     }

@@ -6,14 +6,17 @@ let package = Package(
   platforms: [.macOS(.v14)],
   products: [.executable(name: "Myra", targets: ["Myra"])],
   dependencies: [
-    .package(url: "https://github.com/scinfu/SwiftSoup.git", from: "2.9.6")
+    .package(url: "https://github.com/scinfu/SwiftSoup.git", from: "2.9.6"),
+    .package(url: "https://github.com/sparkle-project/Sparkle", exact: "2.10.0"),
   ],
   targets: [
     .binaryTarget(name: "VLCKit", path: "Vendor/VLCKit.xcframework"),
     .systemLibrary(name: "CSQLite", path: "Sources/CSQLite"),
     .executableTarget(
       name: "Myra",
-      dependencies: ["SwiftSoup", "CSQLite", "VLCKit"],
+      dependencies: [
+        "SwiftSoup", "CSQLite", "VLCKit", .product(name: "Sparkle", package: "Sparkle"),
+      ],
       path: "Sources/Myra",
       exclude: ["Resources/TMDB.svg"],
       resources: [

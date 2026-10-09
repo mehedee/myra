@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>SUFeedURL</key><string>https://github.com/mehedee/h5ai-streamer/releases/latest/download/appcast.xml</string>
+  <key>SUPublicEDKey</key><string>CWKAv7hQUUZSfWS0AG+DKH7S+txsU3KIY+ds3Yk6Uy0=</string>
+  <key>SUEnableAutomaticChecks</key><true/>
+  <key>SUScheduledCheckInterval</key><integer>86400</integer>
+  <key>SUAutomaticallyUpdate</key><false/>
+  <key>SUAllowsAutomaticUpdates</key><false/>
+  <key>SUEnableSystemProfiling</key><false/>
+  <key>SUSendProfileInfo</key><false/>
+  <key>SURequireSignedFeed</key><true/>
+  <key>SUSignedFeedFailureExpirationInterval</key><integer>0</integer>
+  <key>SUVerifyUpdateBeforeExtraction</key><true/>
+</dict></plist>

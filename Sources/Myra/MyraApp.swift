@@ -157,6 +157,7 @@ struct MyraApp: App {
         .frame(minWidth: 1_000, minHeight: 650)
         .onAppear {
           MyraAppearance.apply()
+          coordinator.updater.start()
           appDelegate.terminationHandler = { coordinator.terminateImmediately() }
         }
     }
@@ -164,6 +165,7 @@ struct MyraApp: App {
     .windowToolbarStyle(.unified(showsTitle: false))
     .commands {
       CommandGroup(after: .appInfo) {
+        UpdateCheckButton(updater: coordinator.updater)
         Button("Clear Completed Downloads") { coordinator.clearCompleted() }
           .keyboardShortcut("k", modifiers: [.command, .shift])
       }

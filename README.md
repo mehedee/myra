@@ -1,6 +1,6 @@
 # Myra
 
-**Myra 3.0.1 · build 9** — a personal native macOS entertainment library, player, and downloader. Browse h5ai, Apache, and nginx HTTP directory listings, organise movies and series, and play directly from your sources or completed downloads.
+**Myra 3.0.2 · build 10** — a personal native macOS entertainment library, player, and downloader. Browse h5ai, Apache, and nginx HTTP directory listings, organise movies and series, and play directly from your sources or completed downloads.
 
 ## Requirements and installation
 
@@ -14,6 +14,8 @@ This personal build is ad-hoc signed, not notarized. Finder may require **Open**
 ## Home and personal library
 
 - Continue Watching resumes the most recently played movie version or episode.
+- Clear Continue Watching with confirmation; unfinished resume records are removed without deleting media or changing watched state. Current playback continues and may be recorded again on a future play.
+- Home searches hide shelves with no matching titles; clearing the search restores shelves without resetting other filters or expanded-shelf choices.
 - Vote-weighted Top Rated Movies, Series to Watch, Latest Releases, Recently Added, Watchlist, followed-series episode indicators, and personal collections.
 - Search and a single row of genre, language, year, source, rating, and watched filters.
 - **Pick something** waits for current Home filters, offers filter reset when no unwatched title matches, and opens a separate suggestion window with artwork, details, Play, and Another Pick. It does not add a Home shelf.
@@ -24,6 +26,15 @@ This personal build is ad-hoc signed, not notarized. Finder may require **Open**
 - Followed-show notifications are optional and require macOS permission.
 
 Availability reflects the saved index; it does not guarantee that a source is reachable from the current network. Myra uses the TMDB API but is not endorsed or certified by TMDB.
+
+## Release updates
+
+Settings and the Myra menu include **Check for Updates…**. Daily background checks
+can be enabled or disabled in Settings. There is one release stream, with no channel
+selector. Sparkle verifies signed feeds and archives before extraction and asks before
+installation/relaunch. Personal data and download locations are preserved.
+The first updater-enabled release must be installed manually; live checks require
+the signed appcast to be published. See [update preparation and recovery](docs/updates.md).
 
 ## Myra AI
 

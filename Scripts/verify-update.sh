@@ -53,10 +53,12 @@ TEST_FRAMEWORKS_DIR="$TEST_PRODUCTS_DIR/MyraTests.xctest/Contents/Frameworks"
 mkdir -p "$TEST_FRAMEWORKS_DIR"
 ditto "$PROJECT_ROOT/Vendor/VLCKit.xcframework/macos-arm64_x86_64/VLCKit.framework" \
   "$TEST_FRAMEWORKS_DIR/VLCKit.framework"
+ditto "$PROJECT_ROOT/.build/artifacts/sparkle/Sparkle/Sparkle.xcframework/macos-arm64_x86_64/Sparkle.framework" \
+  "$TEST_FRAMEWORKS_DIR/Sparkle.framework"
 swift test --skip-build
 zsh Scripts/build-dmg.sh
-[[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' .build/dmg/products/Myra.app/Contents/Info.plist)" == "3.0.1" ]]
-[[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' .build/dmg/products/Myra.app/Contents/Info.plist)" == "9" ]]
+[[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' .build/dmg/products/Myra.app/Contents/Info.plist)" == "3.0.2" ]]
+[[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' .build/dmg/products/Myra.app/Contents/Info.plist)" == "10" ]]
 codesign --verify --deep --strict --verbose=2 .build/dmg/products/Myra.app
 otool -L .build/dmg/products/Myra.app/Contents/MacOS/Myra
 print "Myra update verification and DMG build completed."
