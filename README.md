@@ -7,11 +7,78 @@
 - Apple Silicon Mac, macOS 14 or later.
 - Apple on-device AI additionally requires macOS 26+, Apple Intelligence enabled, a downloaded model, and a supported language. Unsupported systems retain normal library, search, downloads, and playback.
 - Install `aria2` for downloads: `brew install aria2`. Embedded playback includes VLCKit; external VLC is optional.
-- Download **Myra.dmg** from [GitHub Releases](https://github.com/mehedee/h5ai-streamer/releases), then drag Myra into Applications.
+- Download **Myra.dmg** from [GitHub Releases](https://github.com/mehedee/myra/releases), then drag Myra into Applications.
 
 This personal build is ad-hoc signed, not notarized. Finder may require **Open** on first launch. Keep the previous application for rollback. Version 3.0.1 uses Myra throughout its project, module, bundle identifier and storage. For an existing installation, close the app and use the explicit profile migration below before first launch. Keep the original profile for rollback; never run both applications against the same data.
 
+## Screenshots
+
+A tour of Myra's native macOS interface: personal discovery, AI assistance, grouped episodes, offline downloads, and embedded VLC controls.
+
+These screenshots are rendered from Myra's actual views using an isolated demo library, not a personal library. Posters are placeholders; titles, ratings, file availability, and AI responses are sample data. The player preview shows its controls without a running video. Real artwork and metadata depend on your configured sources and metadata providers.
+
+### Home and Continue Watching
+
+Resume unfinished titles, browse rating-based shelves, and narrow your library with genre, language, year, source, and watched filters.
+
+![Myra Home with Continue Watching, resume progress, discovery shelves, and library filters](docs/screenshots/home-wide.png)
+
+<details>
+<summary>Search — show only matching titles and shelves</summary>
+
+Search keeps relevant shelves visible and hides empty ones, without losing your other filters.
+
+![Myra Home searching for Dune with only matching Continue Watching and Top Rated shelves](docs/screenshots/home-search-matches.png)
+
+</details>
+
+<details>
+<summary>Pick Something — discovery with details and available versions</summary>
+
+Find an unwatched title, inspect its details, manage your watchlist, and choose an available quality or source version.
+
+![Myra suggestion window with title details, watchlist actions, and grouped 1080p and 2160p versions](docs/screenshots/pick-suggestion.png)
+
+</details>
+
+<details>
+<summary>TV series — grouped seasons, episodes, and quality versions</summary>
+
+Choose a concrete episode from collapsible seasons; alternate versions stay grouped under the same episode.
+
+![Myra episode chooser showing collapsible seasons and alternate episode versions](docs/screenshots/season-episode-chooser.png)
+
+</details>
+
+<details>
+<summary>Myra AI — assistance grounded in your catalogue</summary>
+
+Ask for summaries, recommendations, comparisons, and more, then play or save a result. This preview uses a deterministic demo response, not a live model request.
+
+![Myra AI workspace with a selected catalogue title, sample short summary, Play, and Add to Watchlist actions](docs/screenshots/myra-ai-workspace-result.png)
+
+</details>
+
+<details>
+<summary>Offline Library — play completed downloads without remote sources</summary>
+
+Browse downloaded titles and their versions, with clear warnings when a local file or drive is missing.
+
+![Myra Offline Library with grouped downloaded versions and a missing-file warning](docs/screenshots/offline-library.png)
+
+</details>
+
+<details>
+<summary>Embedded player — VLC playback controls inside Myra</summary>
+
+Access seeking, audio and subtitle controls, playback speed, repeat, and volume directly in the app.
+
+![Myra embedded VLC player interface with seekbar, playback controls, audio and subtitle controls, and volume](docs/screenshots/player-controls.png)
+
+</details>
+
 ## Home and personal library
+
 
 - Continue Watching resumes the most recently played movie version or episode.
 - Clear Continue Watching with confirmation; unfinished resume records are removed without deleting media or changing watched state. Current playback continues and may be recorded again on a future play.
