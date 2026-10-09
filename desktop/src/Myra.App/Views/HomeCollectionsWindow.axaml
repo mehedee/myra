@@ -1,0 +1,53 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:Myra.App.ViewModels"
+        x:Class="Myra.App.Views.HomeCollectionsWindow"
+        x:DataType="vm:HomeCollectionsViewModel"
+        Title="Personal Collections"
+        Icon="/Assets/Myra.ico"
+        Width="680" Height="520" MinWidth="600" MinHeight="420"
+        WindowStartupLocation="CenterOwner">
+  <!-- macOS EntertainmentCollectionsView, with the followed-series notification opt-in. -->
+  <DockPanel Margin="24">
+    <Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto" Margin="0,0,0,12">
+      <TextBlock Text="Personal Collections" Classes="title" />
+      <Button Grid.Column="1" Content="Done" x:Name="DoneButton" />
+    </Grid>
+    <TextBlock DockPanel.Dock="Top" Opacity="0.7" TextWrapping="Wrap" Margin="0,0,0,12"
+               Text="Organize titles without moving or deleting their source files. Add titles from their card menu or details." />
+    <Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto" ColumnSpacing="8" Margin="0,0,0,12">
+      <TextBox Text="{Binding NewName}" Watermark="New collection name" x:Name="NameBox" />
+      <Button Grid.Column="1" Content="Create" Command="{Binding CreateCommand}" IsDefault="True" />
+    </Grid>
+    <StackPanel DockPanel.Dock="Bottom" Spacing="6" Margin="0,12,0,0">
+      <CheckBox Content="Notify me when followed series gain new episodes" IsChecked="{Binding Notifications}" />
+      <TextBlock Text="{Binding NotificationHint}" Classes="caption" TextWrapping="Wrap" />
+      <TextBlock Text="{Binding ErrorMessage}" Foreground="Orange" FontSize="12" TextWrapping="Wrap"
+                 IsVisible="{Binding ErrorMessage, Converter={x:Static ObjectConverters.IsNotNull}}" />
+    </StackPanel>
+    <ScrollViewer>
+      <ItemsControl ItemsSource="{Binding Collections}">
+        <ItemsControl.ItemTemplate>
+          <DataTemplate x:DataType="vm:HomeCollectionRow">
+            <Border Classes="row" Margin="0,0,0,6" Padding="10,6">
+              <Panel>
+                <Grid ColumnDefinitions="Auto,*,Auto,Auto,Auto" ColumnSpacing="10" IsVisible="{Binding IsNotRenaming}">
+                  <PathIcon Data="{StaticResource IconStack}" Width="16" Height="16" />
+                  <TextBlock Grid.Column="1" Text="{Binding Name}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                  <TextBlock Grid.Column="2" Text="{Binding CountText}" Opacity="0.7" VerticalAlignment="Center" />
+                  <Button Grid.Column="3" Content="Rename" Command="{Binding StartRenameCommand}" />
+                  <Button Grid.Column="4" Content="Delete" Command="{Binding DeleteCommand}" Foreground="#E81123" />
+                </Grid>
+                <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8" IsVisible="{Binding IsRenaming}">
+                  <TextBox Text="{Binding RenameText}" Watermark="Collection name" />
+                  <Button Grid.Column="1" Content="Save" Command="{Binding SaveRenameCommand}" />
+                  <Button Grid.Column="2" Content="Cancel" Command="{Binding CancelRenameCommand}" />
+                </Grid>
+              </Panel>
+            </Border>
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+    </ScrollViewer>
+  </DockPanel>
+</Window>

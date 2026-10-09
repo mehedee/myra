@@ -1,5 +1,6 @@
 using Avalonia.Controls;
 using Avalonia.Platform.Storage;
+using Myra.App.Services;
 using Myra.Core;
 
 namespace Myra.App.Views;
@@ -9,14 +10,19 @@ public partial class SettingsWindow : Window
     private static readonly (IndexingMode Mode, string Label)[] IndexingChoices =
         [(IndexingMode.Balanced, "Balanced"), (IndexingMode.LowImpact, "Low impact")];
 
+    private readonly AppServices? _services;
+
     public SettingsWindow() : this(new AppSettings(), new PlayerPersonalState())
     {
     }
 
-    public SettingsWindow(AppSettings settings, PlayerPersonalState player)
+    public SettingsWindow(AppSettings settings, PlayerPersonalState player, AppServices? services = null)
     {
         InitializeComponent();
         DataContext = settings;
+        _services = services;
+        BuildAppearance(settings);
+        if (services is not null) BuildServices(services);
 
         IndexingBox.ItemsSource = IndexingChoices.Select(c => c.Label).ToList();
         IndexingBox.SelectedIndex = Array.FindIndex(IndexingChoices, c => c.Mode == settings.IndexingMode);

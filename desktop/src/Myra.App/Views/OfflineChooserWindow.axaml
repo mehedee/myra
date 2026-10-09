@@ -1,0 +1,57 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:Myra.App.ViewModels"
+        x:Class="Myra.App.Views.OfflineChooserWindow"
+        x:DataType="vm:OfflineChooserViewModel"
+        Title="{Binding DisplayName}"
+        Icon="/Assets/Myra.ico"
+        Width="750" Height="520" MinWidth="640" MinHeight="380"
+        WindowStartupLocation="CenterOwner">
+  <!-- macOS OfflineVersionChooser: every known file, with its path, Reveal or a missing-file marker. -->
+  <DockPanel Margin="24">
+    <Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto" Margin="0,0,0,16">
+      <TextBlock Text="{Binding DisplayName}" Classes="title" TextWrapping="Wrap" />
+      <Button Grid.Column="1" Content="Done" x:Name="DoneButton" VerticalAlignment="Top" />
+    </Grid>
+    <ScrollViewer HorizontalScrollBarVisibility="Disabled">
+      <ItemsControl ItemsSource="{Binding Groups}">
+        <ItemsControl.ItemTemplate>
+          <DataTemplate x:DataType="vm:OfflineChooserGroup">
+            <StackPanel Spacing="8" Margin="0,0,0,12">
+              <TextBlock Text="{Binding Label}" FontWeight="SemiBold" IsVisible="{Binding HasLabel}" />
+              <ItemsControl ItemsSource="{Binding Rows}">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate x:DataType="vm:OfflineChooserRow">
+                    <StackPanel Spacing="6" Margin="0,0,0,8">
+                      <Border Classes="row">
+                        <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="12">
+                          <PathIcon Data="{StaticResource IconMovie}" Width="20" Height="20" VerticalAlignment="Top"
+                                    Foreground="{DynamicResource SystemAccentColor}" />
+                          <StackPanel Grid.Column="1" Spacing="4">
+                            <SelectableTextBlock Text="{Binding Version.Name}" FontWeight="SemiBold" TextWrapping="Wrap" />
+                            <TextBlock Text="{Binding Version.QualityText}" Classes="caption" />
+                            <TextBlock Text="{Binding Version.SavedProgressText}" FontSize="12" IsVisible="{Binding Version.HasSavedProgress}" />
+                          </StackPanel>
+                          <Button Grid.Column="2" Content="{Binding Version.PlayLabel}" Classes="accent" VerticalAlignment="Center"
+                                  Command="{Binding Version.ChooseCommand}" />
+                        </Grid>
+                      </Border>
+                      <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                        <SelectableTextBlock Text="{Binding Path}" Classes="caption" FontSize="11" Opacity="0.7" TextWrapping="Wrap" />
+                        <Button Grid.Column="1" Content="Reveal" Command="{Binding RevealCommand}" IsVisible="{Binding Exists}" />
+                        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4" IsVisible="{Binding Missing}">
+                          <PathIcon Data="{StaticResource IconWarning}" Width="12" Height="12" Foreground="Orange" />
+                          <TextBlock Text="Missing file" Foreground="Orange" FontSize="12" />
+                        </StackPanel>
+                      </Grid>
+                    </StackPanel>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </StackPanel>
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+    </ScrollViewer>
+  </DockPanel>
+</Window>

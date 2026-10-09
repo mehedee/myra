@@ -1,0 +1,241 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:Myra.App.ViewModels"
+        xmlns:views="using:Myra.App.Views"
+        x:Class="Myra.App.Views.AiWorkspaceWindow"
+        x:DataType="vm:AiWorkspaceViewModel"
+        Title="Myra AI"
+        Icon="/Assets/Myra.ico"
+        Width="1040" Height="740" MinWidth="840" MinHeight="600"
+        WindowStartupLocation="CenterOwner">
+  <!-- macOS MyraAIWorkspaceView: tool, request and titles on the left; results on the right. -->
+  <Grid RowDefinitions="Auto,Auto,*">
+    <Grid ColumnDefinitions="Auto,*,Auto,Auto" ColumnSpacing="10" Margin="20,16">
+      <PathIcon Data="{StaticResource IconSparkles}" Width="20" Height="20" />
+      <TextBlock Grid.Column="1" Text="Myra Assistant" FontSize="20" FontWeight="Bold" VerticalAlignment="Center" />
+      <Button Grid.Column="2" Content="AI Settings" Command="{Binding OpenSettingsCommand}" x:Name="SettingsButton" />
+      <Button Grid.Column="3" Content="Close" Command="{Binding CloseCommand}" ToolTip.Tip="Close (Esc)" />
+    </Grid>
+    <Separator Grid.Row="1" Margin="0" />
+
+    <Grid Grid.Row="2" ColumnDefinitions="380,*">
+      <!-- ===== Request ===== -->
+      <ScrollViewer HorizontalScrollBarVisibility="Disabled">
+        <StackPanel Margin="20" Spacing="12">
+          <Border Classes="row" Background="#22FFA500" IsVisible="{Binding IsProviderDisabled}" x:Name="DisabledBanner">
+            <StackPanel Spacing="8">
+              <TextBlock Text="Myra AI is off" FontWeight="SemiBold" />
+              <TextBlock TextWrapping="Wrap"
+                         Text="Choose OpenAI or Claude in AI Settings to use these tools. Search, Pick something and playback work without AI." />
+              <Button Content="Open AI Settings" Command="{Binding OpenSettingsCommand}" />
+            </StackPanel>
+          </Border>
+
+          <TextBlock Text="What would you like to do?" Classes="heading" />
+          <ComboBox ItemsSource="{Binding Features}" SelectedItem="{Binding SelectedFeature}" HorizontalAlignment="Stretch"
+                    IsEnabled="{Binding !IsBusy}" x:Name="FeatureBox" />
+          <TextBlock Text="{Binding Hint}" TextWrapping="Wrap" Opacity="0.75" />
+          <TextBlock Text="{Binding ProviderStatus}" Classes="caption" TextWrapping="Wrap" />
+          <TextBlock Text="This tool is turned off. Turn it on in AI Settings." Foreground="Orange" TextWrapping="Wrap"
+                     IsVisible="{Binding IsFeatureDisabled}" />
+
+          <TextBox Text="{Binding Prompt}" Watermark="Your request or preferences" MinHeight="80" MaxHeight="140"
+                   TextWrapping="Wrap" AcceptsReturn="False" x:Name="PromptBox"
+                   AutomationProperties.Name="Your request or preferences" />
+          <TextBlock Classes="caption" TextWrapping="Wrap"
+                     Text="Describe your mood, limits or question. Press Enter to ask. Do not include passwords or private network details." />
+
+          <StackPanel Spacing="6" IsVisible="{Binding IsPlan}">
+            <TextBlock Text="Time available (minutes)" Classes="heading" />
+            <NumericUpDown Value="{Binding AvailableMinutes}" Minimum="15" Maximum="600" Increment="15" FormatString="0"
+                           HorizontalAlignment="Left" Width="160" />
+          </StackPanel>
+
+          <StackPanel Spacing="8" IsVisible="{Binding ShowTitleSelection}">
+            <TextBlock Text="{Binding TitleSelectionHeading}" Classes="heading" />
+            <ItemsControl ItemsSource="{Binding SelectedTitles}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="vm:AiTitleChoiceViewModel">
+                  <Grid ColumnDefinitions="*,Auto" Margin="0,1">
+                    <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" FontWeight="SemiBold" />
+                    <Button Grid.Column="1" Classes="icon plain" Command="{Binding ChooseCommand}" ToolTip.Tip="Remove"
+                            AutomationProperties.Name="{Binding Name, StringFormat='Remove {0}'}">
+                      <PathIcon Data="{StaticResource IconClose}" Width="11" Height="11" />
+                    </Button>
+                  </Grid>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+            <TextBox Text="{Binding TitleQuery}" Watermark="Find a title in your library" x:Name="TitleSearchBox" />
+            <Border Classes="row" Padding="4" Height="150">
+              <ScrollViewer>
+                <ItemsControl ItemsSource="{Binding MatchingTitles}">
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="vm:AiTitleChoiceViewModel">
+                      <Button Classes="plain" Command="{Binding ChooseCommand}" HorizontalAlignment="Stretch"
+                              HorizontalContentAlignment="Stretch" Padding="6,3">
+                        <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
+                          <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis" />
+                          <TextBlock Grid.Column="1" Text="{Binding Year}" Opacity="0.6" />
+                          <PathIcon Grid.Column="2" Data="{StaticResource IconCheckCircle}" Width="13" Height="13"
+                                    IsVisible="{Binding IsSelected}" />
+                        </Grid>
+                      </Button>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+              </ScrollViewer>
+            </Border>
+            <TextBlock Classes="caption" Text="Showing up to 60 matches. Select up to 10 titles." />
+          </StackPanel>
+
+          <StackPanel Spacing="8" IsVisible="{Binding IsRecap}">
+            <TextBlock Text="Recap a watched episode" Classes="heading" />
+            <ComboBox ItemsSource="{Binding Episodes}" SelectedItem="{Binding SelectedEpisode}" PlaceholderText="Select an episode"
+                      HorizontalAlignment="Stretch" x:Name="EpisodeBox" />
+            <TextBlock Classes="caption" TextWrapping="Wrap" IsVisible="{Binding HasNoEpisodes}"
+                       Text="Only completed episodes, or episodes of a series you marked watched, can be recapped." />
+            <Button Content="Import This Episode's Subtitles…" Command="{Binding ImportSubtitlesCommand}"
+                    IsEnabled="{Binding CanImportSubtitles}" />
+            <TextBlock Text="{Binding SubtitleName}" Classes="caption" TextWrapping="Wrap" />
+            <TextBlock Classes="caption" TextWrapping="Wrap"
+                       Text="Choose subtitles for this episode only. Subtitles can contain spoilers, so a recap can contain spoilers too. Sending subtitle text to a cloud provider needs a separate permission." />
+          </StackPanel>
+
+          <StackPanel Orientation="Horizontal" Spacing="10">
+            <Button Classes="accent" Content="{Binding RunLabel}" Command="{Binding RunCommand}" x:Name="RunButton"
+                    ToolTip.Tip="Ask Myra (Enter)" />
+            <ProgressBar IsIndeterminate="True" Width="80" IsVisible="{Binding IsBusy}" VerticalAlignment="Center" />
+            <Button Content="Cancel" Command="{Binding CancelCommand}" IsVisible="{Binding IsBusy}" ToolTip.Tip="Cancel (Esc)"
+                    x:Name="CancelButton" />
+          </StackPanel>
+          <TextBlock Classes="caption" TextWrapping="Wrap" Text="{Binding TwoStepNote}" IsVisible="{Binding HasTwoStepNote}" />
+          <TextBlock Classes="caption" TextWrapping="Wrap"
+                     Text="AI can make mistakes. Availability and playback always come from your library." />
+          <StackPanel Orientation="Horizontal" Spacing="6" IsVisible="{Binding IsCloud}">
+            <PathIcon Data="{StaticResource IconInfo}" Width="12" Height="12" Opacity="0.7" />
+            <TextBlock Classes="caption" TextWrapping="Wrap" MaxWidth="320" x:Name="CloudNote"
+                       Text="This request uses your selected cloud provider and may incur charges." />
+          </StackPanel>
+
+          <Separator />
+          <TextBlock Text="Usage" Classes="heading" />
+          <TextBlock Text="{Binding UsageText}" Classes="caption" TextWrapping="Wrap" x:Name="UsageLabel" />
+          <TextBlock Text="{Binding LimitText}" Foreground="Orange" TextWrapping="Wrap" IsVisible="{Binding IsLimitReached}" />
+          <TextBlock Text="{Binding UsageNote}" Classes="caption" TextWrapping="Wrap" />
+        </StackPanel>
+      </ScrollViewer>
+
+      <!-- ===== Results ===== -->
+      <Border Grid.Column="1" BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}" BorderThickness="1,0,0,0">
+        <ScrollViewer HorizontalScrollBarVisibility="Disabled" x:Name="ResultsScroller">
+          <StackPanel Margin="20" Spacing="16">
+            <!-- Information, not a warning: neutral text. Failures use the orange error box below. -->
+            <TextBlock Text="{Binding LocalMessage}" Foreground="{DynamicResource SystemControlForegroundBaseMediumHighBrush}" TextWrapping="Wrap" x:Name="LocalMessageText"
+                       IsVisible="{Binding LocalMessage, Converter={x:Static ObjectConverters.IsNotNull}}" />
+
+            <Border Classes="row" Background="#22FFA500" IsVisible="{Binding HasError}" x:Name="ErrorBox">
+              <StackPanel Spacing="8">
+                <SelectableTextBlock Text="{Binding ErrorMessage}" Foreground="Orange" TextWrapping="Wrap" />
+                <TextBlock Text="{Binding RecoveryText}" TextWrapping="Wrap" />
+                <Button Content="Open AI Settings" Command="{Binding OpenSettingsCommand}" IsVisible="{Binding ShowSettingsRecovery}" />
+              </StackPanel>
+            </Border>
+
+            <StackPanel Spacing="10" IsVisible="{Binding IsBusy}" HorizontalAlignment="Center" Margin="0,60">
+              <ProgressBar IsIndeterminate="True" Width="220" />
+              <TextBlock Text="Myra is working… Press Esc to cancel." HorizontalAlignment="Center" Opacity="0.7" />
+            </StackPanel>
+
+            <StackPanel IsVisible="{Binding ShowEmptyState}" HorizontalAlignment="Center" Spacing="10" Margin="0,80" MaxWidth="440">
+              <PathIcon Data="{StaticResource IconSparkles}" Width="44" Height="44" Opacity="0.5" />
+              <TextBlock Text="Find your next favourite" FontSize="20" FontWeight="SemiBold" HorizontalAlignment="Center" />
+              <TextBlock Opacity="0.7" TextWrapping="Wrap" TextAlignment="Center"
+                         Text="Choose a tool and describe what you need. Myra uses your indexed library and available metadata. Nothing is sent until you press Ask Myra." />
+            </StackPanel>
+
+            <StackPanel Spacing="16" IsVisible="{Binding HasResult}" x:Name="ResultPanel">
+              <SelectableTextBlock Text="{Binding Summary}" TextWrapping="Wrap" FontSize="14" />
+              <TextBlock Text="{Binding TagsText}" IsVisible="{Binding HasTags}" Opacity="0.75" TextWrapping="Wrap" />
+
+              <ItemsControl ItemsSource="{Binding Cards}" x:Name="CardList">
+                <ItemsControl.ItemsPanel>
+                  <ItemsPanelTemplate>
+                    <StackPanel Spacing="12" />
+                  </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate x:DataType="vm:AiResultCardViewModel">
+                    <Border Classes="card" Padding="12">
+                      <Grid ColumnDefinitions="76,*" ColumnSpacing="14">
+                        <Border Width="76" Height="108" CornerRadius="8" ClipToBounds="True" VerticalAlignment="Top"
+                                Background="{DynamicResource SystemControlBackgroundBaseLowBrush}">
+                          <Panel>
+                            <PathIcon Data="{StaticResource IconMovie}" Width="28" Height="28" Opacity="0.5" />
+                            <Image views:ShellImage.Url="{Binding PosterUrl}" Stretch="UniformToFill" />
+                          </Panel>
+                        </Border>
+                        <StackPanel Grid.Column="1" Spacing="6">
+                          <TextBlock Text="{Binding Name}" FontWeight="SemiBold" FontSize="15" TextWrapping="Wrap" />
+                          <TextBlock Text="{Binding InfoLine}" Classes="caption" />
+                          <TextBlock Text="{Binding EpisodeText}" Classes="caption" IsVisible="{Binding HasEpisode}" />
+                          <TextBlock Text="{Binding RuntimeText}" Classes="caption" IsVisible="{Binding HasRuntime}" />
+                          <SelectableTextBlock Text="{Binding Reason}" TextWrapping="Wrap" />
+                          <WrapPanel ItemSpacing="8" LineSpacing="6">
+                            <Button Classes="accent" Command="{Binding PlayCommand}">
+                              <StackPanel Orientation="Horizontal" Spacing="6">
+                                <PathIcon Data="{StaticResource IconPlay}" Width="11" Height="11" />
+                                <TextBlock Text="{Binding PlayLabel}" />
+                              </StackPanel>
+                            </Button>
+                            <Button Content="Details" Command="{Binding DetailsCommand}" />
+                            <Button Content="{Binding WatchlistLabel}" Command="{Binding ToggleWatchlistCommand}" />
+                          </WrapPanel>
+                        </StackPanel>
+                      </Grid>
+                    </Border>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+
+              <StackPanel Spacing="10" IsVisible="{Binding HasActions}">
+                <Separator />
+                <TextBlock Text="Review proposed changes" Classes="heading" FontSize="15" />
+                <TextBlock Classes="caption" TextWrapping="Wrap"
+                           Text="Nothing changes until you choose Apply. Check corrections before you save them." />
+                <ItemsControl ItemsSource="{Binding Actions}" x:Name="ActionList">
+                  <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate>
+                      <StackPanel Spacing="10" />
+                    </ItemsPanelTemplate>
+                  </ItemsControl.ItemsPanel>
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="vm:AiActionViewModel">
+                      <Border Classes="row">
+                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+                          <StackPanel Spacing="6">
+                            <TextBlock Text="{Binding Label}" FontWeight="SemiBold" TextWrapping="Wrap" />
+                            <TextBlock Text="{Binding Preview}" TextWrapping="Wrap" />
+                            <TextBlock Text="{Binding TitlesText}" Classes="caption" TextWrapping="Wrap" IsVisible="{Binding HasTitles}" />
+                          </StackPanel>
+                          <Button Grid.Column="1" Classes="accent" Content="{Binding ApplyLabel}" Command="{Binding ApplyCommand}"
+                                  VerticalAlignment="Top" />
+                        </Grid>
+                      </Border>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+              </StackPanel>
+
+              <TextBlock Text="{Binding SourceNote}" Classes="caption" TextWrapping="Wrap" />
+              <TextBlock Text="{Binding GeneratedWith}" Classes="caption" />
+            </StackPanel>
+
+            <Button Content="Undo Last Library Change" Command="{Binding UndoCommand}" IsVisible="{Binding CanUndo}"
+                    x:Name="UndoButton" />
+          </StackPanel>
+        </ScrollViewer>
+      </Border>
+    </Grid>
+  </Grid>
+</Window>

@@ -1,0 +1,117 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Myra.App.ViewModels"
+             xmlns:views="using:Myra.App.Views"
+             xmlns:core="using:Myra.Core"
+             x:Class="Myra.App.Views.HomeView"
+             x:DataType="vm:HomeViewModel">
+  <!-- Home (macOS HomeView): search and actions, a scrollable filter row, then the shelves. -->
+  <ScrollViewer HorizontalScrollBarVisibility="Disabled" x:Name="Scroller">
+    <StackPanel Margin="28,20,28,28" Spacing="24">
+      <StackPanel Spacing="10">
+        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+          <TextBox Text="{Binding Query}" Watermark="Find a movie or series" MinWidth="180" Height="38"
+                   VerticalContentAlignment="Center" CornerRadius="10" x:Name="QueryBox">
+            <TextBox.InnerLeftContent>
+              <PathIcon Data="{StaticResource IconSearch}" Width="14" Height="14" Opacity="0.6" Margin="10,0,0,0" />
+            </TextBox.InnerLeftContent>
+            <TextBox.InnerRightContent>
+              <Button Classes="icon plain" Padding="8,0" IsVisible="{Binding HasQuery}" Command="{Binding ClearQueryCommand}"
+                      ToolTip.Tip="Clear search">
+                <PathIcon Data="{StaticResource IconClose}" Width="11" Height="11" />
+              </Button>
+            </TextBox.InnerRightContent>
+          </TextBox>
+          <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" x:Name="Actions">
+            <Button Command="{Binding PickSomethingCommand}" IsEnabled="{Binding CanPick}" ToolTip.Tip="Pick something to watch">
+              <StackPanel Orientation="Horizontal" Spacing="6">
+                <PathIcon Data="{StaticResource IconDice}" Width="14" Height="14" />
+                <TextBlock Text="Pick something" x:Name="PickLabel" />
+              </StackPanel>
+            </Button>
+            <Button ToolTip.Tip="Myra AI: suggestions, questions and plans from your library" x:Name="AiButton">
+              <Button.Flyout>
+                <MenuFlyout>
+                  <MenuItem Header="Help Me Choose" Command="{Binding OpenAiCommand}" CommandParameter="{x:Static core:AiFeature.SmartPick}" />
+                  <MenuItem Header="Library Assistant" Command="{Binding OpenAiCommand}" CommandParameter="{x:Static core:AiFeature.Assistant}" />
+                  <MenuItem Header="Search in Natural Language" Command="{Binding OpenAiCommand}" CommandParameter="{x:Static core:AiFeature.NaturalSearch}" />
+                  <MenuItem Header="Plan Tonight" Command="{Binding OpenAiCommand}" CommandParameter="{x:Static core:AiFeature.Plan}" />
+                  <MenuItem Header="Viewing Insights" Command="{Binding OpenAiCommand}" CommandParameter="{x:Static core:AiFeature.Insights}" />
+                </MenuFlyout>
+              </Button.Flyout>
+              <StackPanel Orientation="Horizontal" Spacing="6">
+                <PathIcon Data="{StaticResource IconSparkles}" Width="14" Height="14" />
+                <TextBlock Text="Myra AI" x:Name="AiLabel" />
+              </StackPanel>
+            </Button>
+            <Button Command="{Binding UpdateMetadataCommand}" IsEnabled="{Binding HasCatalogue}" ToolTip.Tip="Update metadata">
+              <StackPanel Orientation="Horizontal" Spacing="6">
+                <PathIcon Data="{StaticResource IconSparkles}" Width="14" Height="14" />
+                <TextBlock Text="{Binding UpdateMetadataLabel}" x:Name="MetadataLabel" />
+              </StackPanel>
+            </Button>
+            <Button ToolTip.Tip="Personal Library">
+              <Button.Flyout>
+                <MenuFlyout>
+                  <MenuItem Header="Manage collections" Command="{Binding ManageCollectionsCommand}" />
+                  <MenuItem Header="Export / Import" Command="{Binding ExportImportCommand}" />
+                </MenuFlyout>
+              </Button.Flyout>
+              <StackPanel Orientation="Horizontal" Spacing="6">
+                <PathIcon Data="{StaticResource IconPerson}" Width="14" Height="14" />
+                <TextBlock Text="Personal Library" x:Name="PersonalLabel" />
+              </StackPanel>
+            </Button>
+          </StackPanel>
+        </Grid>
+        <ScrollViewer HorizontalScrollBarVisibility="Hidden" VerticalScrollBarVisibility="Disabled">
+          <StackPanel Orientation="Horizontal" Spacing="12" Margin="0,2">
+            <ComboBox ItemsSource="{Binding Genres}" SelectedIndex="{Binding GenreIndex}" Width="140" />
+            <ComboBox ItemsSource="{Binding Languages}" SelectedIndex="{Binding LanguageIndex}" Width="150" />
+            <ComboBox ItemsSource="{Binding Years}" SelectedIndex="{Binding YearIndex}" Width="120" />
+            <ComboBox ItemsSource="{Binding Sources}" SelectedIndex="{Binding SourceIndex}" Width="150" />
+            <ComboBox ItemsSource="{Binding RatingChoices}" SelectedIndex="{Binding RatingIndex}" Width="130" />
+            <CheckBox Content="Hide watched" IsChecked="{Binding HideWatched}" />
+            <Button Content="Reset" Command="{Binding ResetCommand}" />
+          </StackPanel>
+        </ScrollViewer>
+      </StackPanel>
+
+      <Border Background="#22FFA500" CornerRadius="8" Padding="10,6"
+              IsVisible="{Binding ErrorMessage, Converter={x:Static ObjectConverters.IsNotNull}}">
+        <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8">
+          <PathIcon Data="{StaticResource IconWarning}" Width="14" Height="14" Foreground="Orange" />
+          <TextBlock Grid.Column="1" Text="{Binding ErrorMessage}" Foreground="Orange" TextWrapping="Wrap" VerticalAlignment="Center" />
+          <Button Grid.Column="2" Classes="icon" Command="{Binding ClearErrorCommand}">
+            <PathIcon Data="{StaticResource IconClose}" />
+          </Button>
+        </Grid>
+      </Border>
+
+      <StackPanel IsVisible="{Binding IsCatalogueEmpty}" HorizontalAlignment="Center" Spacing="10" Margin="0,60" MaxWidth="480">
+        <PathIcon Data="{StaticResource IconMovie}" Width="48" Height="48" Opacity="0.5" />
+        <TextBlock Text="Your entertainment home" FontSize="20" FontWeight="SemiBold" HorizontalAlignment="Center" />
+        <TextBlock Text="Add your directory sources in Library and refresh the index. Indexed videos will appear here."
+                   Opacity="0.7" TextWrapping="Wrap" TextAlignment="Center" />
+      </StackPanel>
+
+      <ItemsControl ItemsSource="{Binding Shelves}" IsVisible="{Binding HasCatalogue}">
+        <ItemsControl.ItemsPanel>
+          <ItemsPanelTemplate>
+            <StackPanel Spacing="24" />
+          </ItemsPanelTemplate>
+        </ItemsControl.ItemsPanel>
+        <ItemsControl.ItemTemplate>
+          <DataTemplate x:DataType="vm:HomeShelfViewModel">
+            <views:HomeShelfView />
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+
+      <StackPanel Spacing="4" IsVisible="{Binding HasCatalogue}">
+        <TextBlock Text="{Binding Attribution}" Classes="caption" TextWrapping="Wrap" />
+        <Button Classes="link" Content="TMDB attribution and information" FontSize="11.5" x:Name="TmdbLink" />
+      </StackPanel>
+    </StackPanel>
+  </ScrollViewer>
+</UserControl>

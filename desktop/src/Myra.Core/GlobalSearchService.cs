@@ -26,7 +26,9 @@ public sealed class GlobalSearchService
         bool matchAllVideos = false,
         Func<List<GlobalSearchResult>, CancellationToken, Task>? batchSink = null,
         Func<int>? concurrencyLimit = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        IReadOnlyList<IndexScope>? scopes = null,
+        Func<CancellationToken, Task>? beforeBatch = null)
     {
         var query = rawQuery.Trim();
         if (!matchAllVideos && query.Length < 3) throw new GlobalSearchException(GlobalSearchErrorKind.QueryTooShort);
@@ -35,12 +37,20 @@ public sealed class GlobalSearchService
         var queue = new Queue<Folder>();
         var visited = new HashSet<(Guid, string)>();
         var outstanding = new Dictionary<Guid, int>();
-        foreach (var root in roots)
+        // Scopes start below the root; relative paths stay root-relative.
+        foreach (var scope in scopes ?? roots.Select(IndexScope.ForRoot).ToList())
         {
-            var boundary = new UrlBoundary(root.Url);
-            queue.Enqueue(new Folder(root, boundary, boundary.Root, []));
-            visited.Add((root.Id, boundary.Root.AbsoluteUri));
-            outstanding[root.Id] = 1;
+            var boundary = new UrlBoundary(scope.Root.Url) { SourceId = scope.Root.Id };
+            var start = scope.Folder.SameAs(scope.Root.Url) ? boundary.Root : scope.Folder.StandardizedDirectoryUrl();
+            if (!boundary.Contains(start)) throw new DirectoryException(DirectoryErrorKind.OutsideCategoryRoot);
+            var rootPath = Uri.UnescapeDataString(boundary.Root.AbsolutePath);
+            var folderPath = Uri.UnescapeDataString(start.AbsolutePath);
+            var relative = folderPath.Length > rootPath.Length
+                ? folderPath[rootPath.Length..].Split('/', StringSplitOptions.RemoveEmptyEntries)
+                : [];
+            if (!visited.Add((scope.Root.Id, start.AbsoluteUri))) continue;
+            queue.Enqueue(new Folder(scope.Root, boundary, start, relative));
+            outstanding[scope.Root.Id] = outstanding.GetValueOrDefault(scope.Root.Id) + 1;
         }
 
         var results = new List<GlobalSearchResult>();
@@ -49,11 +59,12 @@ public sealed class GlobalSearchService
         var completedSources = new HashSet<Guid>();
         var progress = new GlobalSearchProgress { SourcesTotal = roots.Count };
         var sorted = !matchAllVideos;
-        await update(Snapshot(batchSink is null ? results : [], progress, failures, sorted));
+        await update(Snapshot(batchSink is null ? results : [], progress, failures, sorted)).ConfigureAwait(false);
 
         while (queue.Count > 0)
         {
             cancellationToken.ThrowIfCancellationRequested();
+            if (beforeBatch is not null) await beforeBatch(cancellationToken).ConfigureAwait(false);
             var requested = concurrencyLimit?.Invoke() ?? _maximumConcurrentFolders;
             var count = Math.Min(Math.Max(1, Math.Min(requested, _maximumConcurrentFolders)), queue.Count);
             var batch = Enumerable.Range(0, count).Select(_ => queue.Dequeue()).ToList();
@@ -62,7 +73,7 @@ public sealed class GlobalSearchService
             {
                 try
                 {
-                    var listing = await _listingLoader(folder.Url, folder.Boundary, cancellationToken);
+                    var listing = await _listingLoader(folder.Url, folder.Boundary, cancellationToken).ConfigureAwait(false);
                     return (folder, listing, error: (string?)null);
                 }
                 catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -73,7 +84,7 @@ public sealed class GlobalSearchService
                 {
                     return (folder, listing: (DirectoryListing?)null, error: error.Message);
                 }
-            }));
+            })).ConfigureAwait(false);
 
             foreach (var (folder, listing, error) in outcomes)
             {
@@ -102,7 +113,7 @@ public sealed class GlobalSearchService
                                 results.Add(result);
                                 if (batchSink is not null && results.Count >= 250)
                                 {
-                                    await batchSink(results, cancellationToken);
+                                    await batchSink(results, cancellationToken).ConfigureAwait(false);
                                     results = [];
                                 }
                             }
@@ -120,13 +131,13 @@ public sealed class GlobalSearchService
                 if (outstanding[folder.Root.Id] == 0 && completedSources.Add(folder.Root.Id))
                     progress = progress with { SourcesCompleted = progress.SourcesCompleted + 1 };
                 progress = progress with { MatchesFound = resultIds.Count, FailedSources = failures.Count };
-                await update(Snapshot(batchSink is null ? results : [], progress, failures, sorted));
+                await update(Snapshot(batchSink is null ? results : [], progress, failures, sorted)).ConfigureAwait(false);
             }
         }
 
         if (batchSink is not null && results.Count > 0)
         {
-            await batchSink(results, cancellationToken);
+            await batchSink(results, cancellationToken).ConfigureAwait(false);
             results = [];
         }
         return Snapshot(batchSink is null ? results : [], progress, failures, sorted);

@@ -1,0 +1,51 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Myra.App.ViewModels"
+             x:Class="Myra.App.Views.OfflineView"
+             x:DataType="vm:OfflineViewModel">
+  <!-- macOS OfflineLibraryView. -->
+  <DockPanel Margin="24">
+    <StackPanel DockPanel.Dock="Top" Spacing="12" Margin="0,0,0,12">
+      <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10">
+        <PathIcon Data="{StaticResource IconDrive}" Width="26" Height="26" />
+        <TextBlock Grid.Column="1" Text="Offline Library" Classes="large" />
+        <CheckBox Grid.Column="2" Content="Hide missing" IsChecked="{Binding HideMissing}" />
+      </Grid>
+      <TextBlock Text="Completed video downloads, grouped by title. Playback works without your remote sources." Opacity="0.7" TextWrapping="Wrap" />
+      <TextBox Text="{Binding Query}" Watermark="Find a downloaded title" />
+      <ProgressBar IsIndeterminate="True" IsVisible="{Binding IsLoading}" Height="3" MinHeight="3" />
+    </StackPanel>
+    <Panel>
+      <StackPanel IsVisible="{Binding IsEmpty}" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="10" MaxWidth="460">
+        <PathIcon Data="{StaticResource IconDownload}" Width="44" Height="44" Opacity="0.5" />
+        <TextBlock Text="No downloaded videos" FontSize="20" FontWeight="SemiBold" HorizontalAlignment="Center" />
+        <TextBlock Text="Completed video downloads appear here. Try clearing your filters." Opacity="0.7" TextWrapping="Wrap" TextAlignment="Center" />
+      </StackPanel>
+      <ListBox ItemsSource="{Binding Rows}" Background="Transparent">
+        <ListBox.ItemTemplate>
+          <DataTemplate x:DataType="vm:OfflineRowViewModel">
+            <Grid ColumnDefinitions="Auto,*,Auto,Auto" ColumnSpacing="14" Margin="0,8">
+              <Panel Width="26" Height="26" VerticalAlignment="Center">
+                <PathIcon Data="{StaticResource IconWarning}" Foreground="Orange" IsVisible="{Binding IsUnavailable}" />
+                <PathIcon Data="{StaticResource IconTv}" Foreground="{DynamicResource SystemAccentColor}" IsVisible="{Binding IsSeries}" />
+                <PathIcon Data="{StaticResource IconMovie}" Foreground="{DynamicResource SystemAccentColor}" IsVisible="{Binding IsMovie}" />
+              </Panel>
+              <StackPanel Grid.Column="1" Spacing="4" VerticalAlignment="Center">
+                <TextBlock Text="{Binding DisplayName}" FontWeight="SemiBold" TextWrapping="Wrap" MaxLines="2" />
+                <TextBlock Text="{Binding Summary}" Classes="caption" />
+                <TextBlock Text="{Binding ReconnectHint}" Foreground="Orange" FontSize="12" IsVisible="{Binding IsUnavailable}" />
+              </StackPanel>
+              <Button Grid.Column="2" Content="Files and versions" Command="{Binding FilesCommand}" VerticalAlignment="Center" />
+              <Button Grid.Column="3" Classes="accent" Command="{Binding PlayCommand}" IsEnabled="{Binding IsAvailable}" VerticalAlignment="Center">
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                  <PathIcon Data="{StaticResource IconPlay}" Width="12" Height="12" />
+                  <TextBlock Text="Play" />
+                </StackPanel>
+              </Button>
+            </Grid>
+          </DataTemplate>
+        </ListBox.ItemTemplate>
+      </ListBox>
+    </Panel>
+  </DockPanel>
+</UserControl>

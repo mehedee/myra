@@ -5,8 +5,13 @@ using System.Text.RegularExpressions;
 
 namespace Myra.Core;
 
-public sealed record MediaIdentity(string Title, string? Year = null, string? Season = null, string? Episode = null)
+/// Title/year/season/episode parsed from a filename. Metadata and subtitle providers receive only
+/// these values (or an IMDb ID), never the source media URL.
+public sealed record MediaIdentity(string Title, string? Year = null, string? Season = null, string? Episode = null, string? ImdbId = null)
 {
+    /// Shared with macOS: metadata cache key, episode identity for followed shows, and marker key.
+    public string CacheKey => string.Join('|', Title.ToLowerInvariant(), Year ?? "", Season ?? "", Episode ?? "", ImdbId ?? "");
+
     private static readonly Regex EpisodePattern = new(@"\bS(\d{1,2})E(\d{1,3})\b", RegexOptions.IgnoreCase);
     private static readonly Regex YearPattern = new(@"\b(?:19|20)\d{2}\b");
     private static readonly Regex QualityPattern = new(
@@ -132,13 +137,45 @@ public sealed class PlaybackSequence
     public GlobalSearchResult? Previous(Uri url) => Neighbours(url, -1).FirstOrDefault();
     public GlobalSearchResult? Next(Uri url) => Neighbours(url, 1).FirstOrDefault();
 
-    private static string RemoveDiacritics(string value)
+    /// Previous/Next are enabled only when a distinct neighbouring title or episode exists.
+    public bool HasPrevious(Uri url) => Neighbours(url, -1).Count > 0;
+    public bool HasNext(Uri url) => Neighbours(url, 1).Count > 0;
+
+    /// "Try another version": every release of the current movie/episode in this folder, current first excluded
+    /// by the caller if desired. Falls back to the current file alone.
+    public IReadOnlyList<GlobalSearchResult> CurrentVersions(GlobalSearchResult current) =>
+        Groups.FirstOrDefault(g => g.Any(v => v.Entry.Url.AbsoluteUri == current.Entry.Url.AbsoluteUri)) ?? [current];
+
+    private static string RemoveDiacritics(string value) => TextFolding.Fold(value);
+}
+
+/// Data for the "Choose a version" dialog: the releases and the one to highlight
+/// (the most recently played, else the requested file).
+public sealed record PlaybackChoices(IReadOnlyList<EntertainmentVersion> Versions, Uri PreferredUrl)
+{
+    /// Null when there is nothing to choose (zero or one version): play the requested file directly.
+    public static PlaybackChoices? For(IReadOnlyList<EntertainmentVersion> versions, GlobalSearchResult requested)
     {
-        var decomposed = value.Normalize(NormalizationForm.FormD);
-        var builder = new StringBuilder(decomposed.Length);
-        foreach (var c in decomposed)
-            if (CharUnicodeInfo.GetUnicodeCategory(c) != UnicodeCategory.NonSpacingMark) builder.Append(c);
-        return builder.ToString().Normalize(NormalizationForm.FormC);
+        if (versions.Count < 2) return null;
+        var preferred = versions.Where(v => v.LastPlayed is not null).MaxBy(v => v.LastPlayed);
+        return new PlaybackChoices(versions, preferred?.Media.Entry.Url ?? requested.Entry.Url);
+    }
+
+    /// Discovers alternate releases from a folder listing when the folder is not indexed yet.
+    /// Only versions of the same season/episode as the requested file are returned.
+    public static List<EntertainmentVersion> FromListing(
+        GlobalSearchResult requested, IEnumerable<DirectoryEntry> entries, Uri? artworkUrl,
+        IReadOnlyDictionary<string, EntertainmentMatchCorrection>? corrections = null)
+    {
+        var sequence = new PlaybackSequence(requested, entries, artworkUrl);
+        var candidates = sequence.Videos.Select(v => new EntertainmentVersion(v, DateTimeOffset.Now));
+        var title = EntertainmentGrouping.Group(candidates, corrections)
+            .FirstOrDefault(t => t.Versions.Any(v => v.Id == requested.Entry.Url.AbsoluteUri));
+        if (title is null) return [];
+        var identity = MediaIdentity.Parse(requested.Entry.Name);
+        int? season = identity.Season is { } s ? int.Parse(s, CultureInfo.InvariantCulture) : null;
+        int? episode = identity.Episode is { } e ? int.Parse(e, CultureInfo.InvariantCulture) : null;
+        return title.Versions.Where(v => v.Season == season && v.Episode == episode).ToList();
     }
 }
 
@@ -217,20 +254,108 @@ public sealed class PlayerPersonalState
     public bool Autoplay { get; set; } = true;
     public int Volume { get; set; } = 100;
 
+    /// Skip intro/outro automatically when the playhead enters a valid marker range.
+    public bool AutomaticSkipping { get; set; }
+
+    /// Marker ranges keyed by PlayerMarkers.EpisodeKey (one file identity) or SeriesKey ("series|…").
+    public Dictionary<string, PlayerSkipMarkers> Markers { get; set; } = [];
+
+    /// A missing file gives defaults. An unreadable or corrupt file is renamed to
+    /// "{name}.corrupt-{timestamp}" first, so the next save cannot overwrite its skip markers.
     public static PlayerPersonalState Load(string? path = null)
     {
+        var file = path ?? AppPaths.PlayerStatePath;
         try
         {
-            return JsonSerializer.Deserialize<PlayerPersonalState>(File.ReadAllText(path ?? AppPaths.PlayerStatePath)) ?? new();
+            if (!File.Exists(file)) return new();
+            var state = JsonSerializer.Deserialize<PlayerPersonalState>(File.ReadAllText(file)) ?? throw new JsonException("Empty player preferences.");
+            state.Markers ??= [];
+            state.AudioLanguage ??= "en";
+            state.SubtitleLanguage ??= "en";
+            if (state.Markers.Keys.Any(k => k is null)) throw new JsonException("Invalid marker key.");
+            return state;
         }
         catch (Exception)
         {
+            PreserveCorrupt(file);
             return new();
+        }
+    }
+
+    internal static void PreserveCorrupt(string file)
+    {
+        try
+        {
+            if (!File.Exists(file)) return;
+            var aside = file + $".corrupt-{DateTime.Now:yyyyMMdd-HHmmss}";
+            for (var i = 1; File.Exists(aside); i++) aside = file + $".corrupt-{DateTime.Now:yyyyMMdd-HHmmss}-{i}";
+            File.Move(file, aside);
+        }
+        catch (Exception)
+        {
+            // If it cannot be moved, the original stays; saving may then replace it.
         }
     }
 
     public void Save(string? path = null) =>
         AtomicFile.WriteAllText(path ?? AppPaths.PlayerStatePath, JsonSerializer.Serialize(this));
+
+    public PlayerPersonalState Clone() => new()
+    {
+        Speed = Speed,
+        AudioLanguage = AudioLanguage,
+        SubtitleLanguage = SubtitleLanguage,
+        Autoplay = Autoplay,
+        Volume = Volume,
+        AutomaticSkipping = AutomaticSkipping,
+        Markers = new Dictionary<string, PlayerSkipMarkers>(Markers),
+    };
+}
+
+public sealed record PlayerSkipMarkers(PlayerSkipRange? Intro = null, PlayerSkipRange? Outro = null);
+
+/// Intro/outro marker rules. Episode markers override series markers; ranges must fit the duration.
+public static class PlayerMarkers
+{
+    public static string EpisodeKey(GlobalSearchResult media) => MediaIdentity.Parse(media.Entry.Name).CacheKey;
+
+    public static string SeriesKey(GlobalSearchResult media) =>
+        "series|" + (MediaIdentity.Parse(media.Entry.Name) with { Season = null, Episode = null }).CacheKey;
+
+    public static PlayerSkipMarkers Current(PlayerPersonalState state, GlobalSearchResult media) =>
+        state.Markers.GetValueOrDefault(EpisodeKey(media)) ?? state.Markers.GetValueOrDefault(SeriesKey(media)) ?? new PlayerSkipMarkers();
+
+    /// Saves markers for the episode or the whole series. Returns false (and saves nothing) when the
+    /// duration is unknown or a range is invalid for it.
+    public static bool Set(PlayerPersonalState state, GlobalSearchResult media, PlayerSkipMarkers markers, bool series, double duration)
+    {
+        if (!(duration > 0) || new[] { markers.Intro, markers.Outro }.Any(r => r is not null && !r.Valid(duration))) return false;
+        state.Markers[series ? SeriesKey(media) : EpisodeKey(media)] = markers;
+        return true;
+    }
+
+    public static void Clear(PlayerPersonalState state, GlobalSearchResult media, bool series) =>
+        state.Markers.Remove(series ? SeriesKey(media) : EpisodeKey(media));
+
+    /// The range the playhead is in, with its button label ("Skip Intro" / "Skip Outro"), or null.
+    public static (string Label, PlayerSkipRange Range)? ActiveSkip(PlayerSkipMarkers markers, double elapsed, double duration)
+    {
+        if (markers.Intro is { } intro && intro.Valid(duration) && intro.Contains(elapsed)) return ("Skip Intro", intro);
+        if (markers.Outro is { } outro && outro.Valid(duration) && outro.Contains(elapsed)) return ("Skip Outro", outro);
+        return null;
+    }
+
+    /// Seek target in seconds when automatic skipping applies now; null to keep playing.
+    public static double? AutomaticSkipTarget(PlayerPersonalState state, GlobalSearchResult media, double elapsed, double duration, bool seekable)
+    {
+        if (!state.AutomaticSkipping || !seekable || !(duration > 0)) return null;
+        return ActiveSkip(Current(state, media), elapsed, duration)?.Range.End;
+    }
+
+    /// Default editor values when no markers exist: intro 0–60 s, outro the last 60 s.
+    public static PlayerSkipMarkers EditorDefaults(PlayerSkipMarkers current, double duration) => new(
+        current.Intro ?? new PlayerSkipRange(0, Math.Min(60, duration)),
+        current.Outro ?? new PlayerSkipRange(Math.Max(0, duration - 60), duration));
 }
 
 public enum PlayerState

@@ -1,0 +1,26 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:Myra.App.ViewModels"
+        xmlns:views="using:Myra.App.Views"
+        x:Class="Myra.App.Views.PickWindow"
+        x:DataType="vm:PickViewModel"
+        Title="Pick Something"
+        Icon="/Assets/Myra.ico"
+        Width="820" Height="720" MinWidth="720" MinHeight="560"
+        WindowStartupLocation="CenterOwner">
+  <!-- macOS EntertainmentPickView: Details for a random unwatched title, or an empty state. -->
+  <Panel>
+    <Panel IsVisible="{Binding HasPick}">
+      <views:DetailView x:Name="Details" DataContext="{Binding Details}" />
+    </Panel>
+    <StackPanel IsVisible="{Binding IsEmpty}" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="14" MaxWidth="460">
+      <PathIcon Data="{StaticResource IconDice}" Width="48" Height="48" Opacity="0.5" />
+      <TextBlock Text="No unwatched titles match" FontSize="20" FontWeight="SemiBold" HorizontalAlignment="Center" />
+      <TextBlock Text="Try broadening your Home filters or refreshing your library." Opacity="0.7"
+                 TextWrapping="Wrap" TextAlignment="Center" />
+      <Button Content="Reset Home Filters" HorizontalAlignment="Center" Command="{Binding ResetFiltersCommand}"
+              IsVisible="{Binding CanResetFilters}" x:Name="ResetFiltersButton" />
+      <Button Content="Close" HorizontalAlignment="Center" Command="{Binding CloseCommand}" />
+    </StackPanel>
+  </Panel>
+</Window>

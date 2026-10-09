@@ -3,9 +3,14 @@
         xmlns:core="using:Myra.Core"
         x:Class="Myra.App.Views.SettingsWindow"
         x:DataType="core:AppSettings"
-        Title="Settings" Width="600" SizeToContent="Height" CanResize="False"
+        Title="Settings" Width="640" Height="760" MinHeight="420" CanResize="True"
         WindowStartupLocation="CenterOwner">
-  <StackPanel Margin="20" Spacing="8">
+  <DockPanel Margin="20">
+    <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8" Margin="0,12,0,0">
+      <Button Content="Close" x:Name="CloseButton" Classes="accent" IsDefault="True" IsCancel="True" />
+    </StackPanel>
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
+    <StackPanel Spacing="8" Margin="0,0,12,0">
     <TextBlock Text="Downloads" Classes="heading" />
     <Grid ColumnDefinitions="170,*,Auto" RowDefinitions="Auto,Auto,Auto" RowSpacing="8" ColumnSpacing="8">
       <TextBlock Text="Download folder" VerticalAlignment="Center" />
@@ -48,8 +53,8 @@
       <ComboBox Grid.Column="3" x:Name="SubtitleBox" HorizontalAlignment="Stretch" />
     </Grid>
 
-    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8" Margin="0,12,0,0">
-      <Button Content="Close" x:Name="CloseButton" Classes="accent" IsDefault="True" IsCancel="True" />
+    <StackPanel x:Name="ServicesPanel" Spacing="8" />
     </StackPanel>
-  </StackPanel>
+    </ScrollViewer>
+  </DockPanel>
 </Window>

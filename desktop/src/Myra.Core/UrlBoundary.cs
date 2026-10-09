@@ -66,6 +66,9 @@ public sealed class UrlBoundary
 
     public Uri Root { get; }
 
+    /// Identifies the source when two sources share a root URL (set by Global search and indexing).
+    public Guid? SourceId { get; init; }
+
     public bool Contains(Uri candidate)
     {
         if (!candidate.IsAbsoluteUri) return false;

@@ -1,0 +1,84 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Myra.App.ViewModels"
+             x:Class="Myra.App.Views.DetailEpisodeList"
+             x:DataType="vm:DetailEpisodeListViewModel">
+  <!-- Shared season / episode / version list (macOS SeasonEpisodeList). -->
+  <UserControl.DataTemplates>
+    <DataTemplate DataType="vm:DetailVersionViewModel">
+      <Border Classes="row" Margin="0,0,0,8">
+        <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="12">
+          <PathIcon Data="{StaticResource IconMovie}" Width="20" Height="20" VerticalAlignment="Top"
+                    Foreground="{DynamicResource SystemAccentColor}" />
+          <StackPanel Grid.Column="1" Spacing="4">
+            <SelectableTextBlock Text="{Binding Name}" FontWeight="SemiBold" TextWrapping="Wrap" />
+            <TextBlock Text="{Binding QualityText}" Classes="caption" />
+            <TextBlock Text="{Binding SourceText}" Classes="caption" />
+            <TextBlock Text="{Binding RelativePath}" Classes="caption" FontSize="10.5" TextTrimming="CharacterEllipsis" MaxLines="2" TextWrapping="Wrap" />
+            <TextBlock Text="{Binding SavedProgressText}" FontSize="12" IsVisible="{Binding HasSavedProgress}" />
+            <TextBlock Text="Previously played" FontSize="12" Foreground="{DynamicResource SystemAccentColor}" IsVisible="{Binding IsLastPlayed}" />
+          </StackPanel>
+          <Button Grid.Column="2" Content="{Binding PlayLabel}" Classes="accent" VerticalAlignment="Center"
+                  Command="{Binding ChooseCommand}" />
+        </Grid>
+      </Border>
+    </DataTemplate>
+  </UserControl.DataTemplates>
+
+  <StackPanel Spacing="12">
+    <!-- Movies: one row per release. -->
+    <ItemsControl ItemsSource="{Binding Versions}" IsVisible="{Binding IsMovie}" />
+
+    <!-- Series: collapsible seasons. -->
+    <ItemsControl ItemsSource="{Binding Seasons}" IsVisible="{Binding IsSeries}">
+      <ItemsControl.ItemTemplate>
+        <DataTemplate x:DataType="vm:DetailSeasonViewModel">
+          <Expander IsExpanded="{Binding IsExpanded}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Margin="0,0,0,12">
+            <Expander.Header>
+              <Grid ColumnDefinitions="*,Auto">
+                <TextBlock Text="{Binding Label}" FontWeight="SemiBold" />
+                <TextBlock Grid.Column="1" Text="{Binding CountText}" Classes="caption" VerticalAlignment="Center" Margin="0,0,8,0" />
+              </Grid>
+            </Expander.Header>
+            <ItemsControl ItemsSource="{Binding Episodes}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="vm:DetailEpisodeViewModel">
+                  <Border Classes="row" Padding="10" Margin="0,0,0,8" ToolTip.Tip="{Binding Tooltip}">
+                    <StackPanel>
+                      <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="12">
+                        <StackPanel Spacing="4">
+                          <StackPanel Orientation="Horizontal" Spacing="6">
+                            <PathIcon Data="{StaticResource IconPlay}" Width="14" Height="14" IsVisible="{Binding IsCurrent}"
+                                      Foreground="{DynamicResource SystemAccentColor}" />
+                            <TextBlock Text="{Binding EpisodeLabel}" FontWeight="SemiBold" />
+                            <TextBlock Text="Last played" FontSize="12" Foreground="{DynamicResource SystemAccentColor}"
+                                       IsVisible="{Binding IsLastPlayed}" VerticalAlignment="Center" />
+                          </StackPanel>
+                          <TextBlock Text="{Binding ResumeText}" Classes="caption" IsVisible="{Binding HasResume}" />
+                          <ProgressBar Value="{Binding ProgressPercent}" Maximum="100" MinWidth="0" Width="180"
+                                       HorizontalAlignment="Left" IsVisible="{Binding HasProgressBar}" Height="4" MinHeight="4" />
+                        </StackPanel>
+                        <StackPanel Grid.Column="1" VerticalAlignment="Center" IsVisible="{Binding HasOneVersion}">
+                          <TextBlock Text="{Binding Single.ShortQuality, FallbackValue=''}" Classes="caption" HorizontalAlignment="Right" />
+                          <TextBlock Text="{Binding Single.CategoryName, FallbackValue=''}" Classes="caption" HorizontalAlignment="Right" />
+                        </StackPanel>
+                        <TextBlock Grid.Column="1" Text="{Binding VersionCountText}" Classes="caption" VerticalAlignment="Center"
+                                   IsVisible="{Binding HasManyVersions}" />
+                        <Button Grid.Column="2" Content="{Binding Single.PlayLabel, FallbackValue='Play'}" Classes="accent" VerticalAlignment="Center"
+                                Command="{Binding Single.ChooseCommand, FallbackValue={x:Null}}" IsVisible="{Binding HasOneVersion}" />
+                      </Grid>
+                      <Expander Header="Versions" IsVisible="{Binding HasManyVersions}" Margin="0,8,0,0"
+                                HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
+                        <ItemsControl ItemsSource="{Binding Versions}" />
+                      </Expander>
+                    </StackPanel>
+                  </Border>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </Expander>
+        </DataTemplate>
+      </ItemsControl.ItemTemplate>
+    </ItemsControl>
+  </StackPanel>
+</UserControl>

@@ -2,7 +2,8 @@ using System.Runtime.InteropServices;
 
 namespace Myra.Core;
 
-/// Windows locations: %APPDATA%\Myra for durable data, %LOCALAPPDATA%\Myra for caches.
+/// Durable data: %APPDATA%\Myra on Windows, ~/.config/Myra on Linux.
+/// Caches: %LOCALAPPDATA%\Myra\Cache on Windows, ~/.cache/Myra on Linux.
 /// MYRA_DATA_DIR overrides both, which keeps tests away from the personal store.
 public static class AppPaths
 {
@@ -24,9 +25,20 @@ public static class AppPaths
         get
         {
             var overridden = Environment.GetEnvironmentVariable("MYRA_DATA_DIR");
-            var path = !string.IsNullOrWhiteSpace(overridden)
-                ? Path.Combine(overridden, "Cache")
-                : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Myra", "Cache");
+            string path;
+            if (!string.IsNullOrWhiteSpace(overridden))
+                path = Path.Combine(overridden, "Cache");
+            else if (OperatingSystem.IsWindows())
+                path = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Myra", "Cache");
+            else
+            {
+                // XDG base directory rules: $XDG_CACHE_HOME, else ~/.cache.
+                var xdg = Environment.GetEnvironmentVariable("XDG_CACHE_HOME");
+                var baseDirectory = !string.IsNullOrWhiteSpace(xdg) && Path.IsPathRooted(xdg)
+                    ? xdg
+                    : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".cache");
+                path = Path.Combine(baseDirectory, "Myra");
+            }
             Directory.CreateDirectory(path);
             return path;
         }
@@ -35,6 +47,24 @@ public static class AppPaths
     public static string StorePath => Path.Combine(DataDirectory, "Myra.json");
     public static string IndexPath => Path.Combine(DataDirectory, "LibraryIndex.sqlite");
     public static string PlayerStatePath => Path.Combine(DataDirectory, "PlayerPreferences.json");
+
+    /// Watchlist, watched, collections, follows, history and match corrections (macOS-compatible JSON).
+    public static string PersonalLibraryPath => Path.Combine(DataDirectory, "EntertainmentPersonal.json");
+
+    /// Inherited Daily / Weekly / Manual-only folder refresh schedules.
+    public static string IndexPoliciesPath => Path.Combine(DataDirectory, "IndexPolicies.json");
+
+    /// Linux secret store fallback (0600). Windows uses DPAPI-protected files in the same folder.
+    public static string SecretsDirectory => Path.Combine(DataDirectory, "Secrets");
+
+    /// Downloaded OpenSubtitles files; app-generated names only, 30 days / 100 MB.
+    public static string SubtitleCacheDirectory => Path.Combine(CacheDirectory, "Subtitles");
+
+    /// Myra AI settings: provider, model, consent switches, limits, language, feedback. Never keys.
+    public static string AiSettingsPath => Path.Combine(DataDirectory, "MyraAI.json");
+
+    /// Myra AI daily generation counter (local day and count).
+    public static string AiUsagePath => Path.Combine(DataDirectory, "MyraAIUsage.json");
 
     public static string DefaultDownloadDirectory() => Path.Combine(DownloadsFolder(), "Myra");
 

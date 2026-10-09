@@ -1,0 +1,97 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Myra.App.ViewModels"
+             xmlns:views="using:Myra.App.Views"
+             xmlns:core="using:Myra.Core"
+             x:Class="Myra.App.Views.DetailView"
+             x:DataType="vm:DetailViewModel">
+  <!-- Title Details (macOS EntertainmentDetailView). Pick Something shows it with a pick header. -->
+  <ScrollViewer HorizontalScrollBarVisibility="Disabled">
+    <StackPanel Margin="24" Spacing="18">
+      <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
+        <StackPanel Spacing="6">
+          <StackPanel Orientation="Horizontal" Spacing="6" IsVisible="{Binding IsPick}">
+            <PathIcon Data="{StaticResource IconDice}" Width="16" Height="16" Opacity="0.7" />
+            <TextBlock Text="Your pick" FontWeight="SemiBold" Opacity="0.7" />
+          </StackPanel>
+          <TextBlock Text="{Binding PickText}" Classes="caption" IsVisible="{Binding IsPick}" TextWrapping="Wrap" />
+          <SelectableTextBlock Text="{Binding DisplayName}" FontSize="28" FontWeight="Bold" TextWrapping="Wrap" x:Name="TitleText" />
+        </StackPanel>
+        <Button Grid.Column="1" x:Name="AnotherPickButton" IsVisible="{Binding IsPick}" VerticalAlignment="Top">
+          <StackPanel Orientation="Horizontal" Spacing="6">
+            <PathIcon Data="{StaticResource IconDice}" Width="14" Height="14" />
+            <TextBlock Text="Another Pick" />
+          </StackPanel>
+        </Button>
+        <Button Grid.Column="2" Content="{Binding CloseLabel}" Command="{Binding CloseCommand}" VerticalAlignment="Top" />
+      </Grid>
+
+      <TextBlock Text="{Binding Message}" Foreground="Orange" TextWrapping="Wrap"
+                 IsVisible="{Binding Message, Converter={x:Static ObjectConverters.IsNotNull}}" />
+
+      <Grid ColumnDefinitions="170,*" ColumnSpacing="22">
+        <Border Width="170" Height="250" CornerRadius="12" ClipToBounds="True" VerticalAlignment="Top"
+                Background="{DynamicResource SystemControlBackgroundBaseLowBrush}">
+          <Panel>
+            <PathIcon Data="{StaticResource IconMovie}" Width="56" Height="56" Opacity="0.5" />
+            <Image views:ShellImage.Url="{Binding PosterUrl}" Stretch="UniformToFill" />
+          </Panel>
+        </Border>
+        <StackPanel Grid.Column="1" Spacing="12">
+          <TextBlock Text="{Binding InfoLine}" Opacity="0.7" />
+          <StackPanel Spacing="12" IsVisible="{Binding HasMetadata}">
+            <StackPanel Orientation="Horizontal" Spacing="6">
+              <PathIcon Data="{StaticResource IconStar}" Width="14" Height="14" Foreground="#E8B500" />
+              <TextBlock Text="{Binding RatingText}" Foreground="#C99A00" />
+            </StackPanel>
+            <SelectableTextBlock Text="{Binding Overview}" TextWrapping="Wrap" />
+            <TextBlock Text="{Binding GenresText}" Opacity="0.7" TextWrapping="Wrap" />
+            <TextBlock Text="{Binding ReleaseText}" IsVisible="{Binding HasRelease}" />
+            <TextBlock Text="{Binding LanguageText}" Opacity="0.7" />
+            <Button Classes="link" Content="View on TMDB" Command="{Binding OpenTmdbCommand}" />
+          </StackPanel>
+          <TextBlock IsVisible="{Binding LacksMetadata}" Opacity="0.7" TextWrapping="Wrap"
+                     Text="Metadata has not been matched yet. Add a TMDB API key in Settings and update metadata, or correct the filename match." />
+          <WrapPanel ItemSpacing="8" LineSpacing="8">
+            <Button Classes="accent" Command="{Binding PlayCommand}" x:Name="PlayButton">
+              <StackPanel Orientation="Horizontal" Spacing="6">
+                <PathIcon Data="{StaticResource IconPlay}" Width="12" Height="12" />
+                <TextBlock Text="{Binding PlayLabel}" />
+              </StackPanel>
+            </Button>
+            <Button Content="{Binding WatchlistLabel}" Command="{Binding ToggleWatchlistCommand}" />
+            <Button Content="{Binding WatchedLabel}" Command="{Binding ToggleWatchedCommand}" />
+            <Button Content="{Binding FollowLabel}" Command="{Binding ToggleFollowCommand}" IsVisible="{Binding IsSeries}" />
+            <Button Content="Add to / remove from collection" x:Name="CollectionsButton" IsVisible="{Binding HasCollections}" />
+            <Button Content="Correct Match…" Command="{Binding CorrectMatchCommand}" ToolTip.Tip="Correct the title, year or TMDB ID of these files" />
+          </WrapPanel>
+          <TextBlock Text="{Binding SourcesText}" Classes="caption" />
+        </StackPanel>
+      </Grid>
+
+      <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8" IsVisible="{Binding CanAskAi}" x:Name="AiRow">
+        <PathIcon Data="{StaticResource IconSparkles}" Width="15" Height="15" />
+        <TextBlock Grid.Column="1" Text="Explore with Myra" FontWeight="SemiBold" VerticalAlignment="Center" />
+        <Button Grid.Column="2" Content="AI tools" x:Name="AiToolsButton">
+          <Button.Flyout>
+            <MenuFlyout>
+              <MenuItem Header="More Like This" Command="{Binding AskAiCommand}" CommandParameter="{x:Static core:AiFeature.Similar}" />
+              <MenuItem Header="Compare Titles" Command="{Binding AskAiCommand}" CommandParameter="{x:Static core:AiFeature.Compare}" />
+              <MenuItem Header="Short Summary" Command="{Binding AskAiCommand}" CommandParameter="{x:Static core:AiFeature.Summary}" />
+              <MenuItem Header="Why This Title?" Command="{Binding AskAiCommand}" CommandParameter="{x:Static core:AiFeature.Explain}" />
+              <MenuItem Header="Suggest Mood Tags" Command="{Binding AskAiCommand}" CommandParameter="{x:Static core:AiFeature.MoodTags}" />
+              <MenuItem Header="Translate Description" Command="{Binding AskAiCommand}" CommandParameter="{x:Static core:AiFeature.Translate}" />
+              <MenuItem Header="Episode Recap" Command="{Binding AskAiCommand}" CommandParameter="{x:Static core:AiFeature.Recap}"
+                        IsEnabled="{Binding IsSeries}" />
+              <MenuItem Header="Suggest Match Corrections" Command="{Binding AskAiCommand}" CommandParameter="{x:Static core:AiFeature.Cleanup}" />
+            </MenuFlyout>
+          </Button.Flyout>
+        </Button>
+      </Grid>
+      <Separator />
+      <TextBlock Text="{Binding VersionsHeading}" Classes="title" />
+      <views:DetailEpisodeList DataContext="{Binding Episodes}" />
+      <TextBlock Text="Metadata provided by TMDB. Myra is not endorsed or certified by TMDB." Classes="caption" />
+    </StackPanel>
+  </ScrollViewer>
+</UserControl>
