@@ -1122,6 +1122,9 @@ final class AppCoordinator: ObservableObject {
       .store(in: &integrationCancellables)
     NotificationCenter.default
       .publisher(for: UserDefaults.didChangeNotification)
+      // Frameworks post this from background threads (PencilKit does at launch on iPadOS),
+      // and the sink closure is main-actor isolated, so it must run on the main queue.
+      .receive(on: DispatchQueue.main)
       .sink { [weak self] _ in
         Task { @MainActor in self?.system.apply() }
       }

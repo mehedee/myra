@@ -39,19 +39,18 @@
 		A1000000000000000000E001 /* Exceptions for "Sources/Myra" folder in "MyraPad" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
-				Resources/MyraIcons,
-				Resources/MyraIcons/aperture-clear.png,
-				Resources/MyraIcons/aperture-dark.png,
-				Resources/MyraIcons/aperture-default.png,
-				Resources/MyraIcons/aperture-tinted.png,
-				Resources/MyraIcons/ribbon-m-clear.png,
-				Resources/MyraIcons/ribbon-m-dark.png,
-				Resources/MyraIcons/ribbon-m-default.png,
-				Resources/MyraIcons/ribbon-m-tinted.png,
-				Resources/MyraIcons/spotlight-clear.png,
-				Resources/MyraIcons/spotlight-dark.png,
-				Resources/MyraIcons/spotlight-default.png,
-				Resources/MyraIcons/spotlight-tinted.png,
+				"Resources/MyraIcons/aperture-clear.png",
+				"Resources/MyraIcons/aperture-dark.png",
+				"Resources/MyraIcons/aperture-default.png",
+				"Resources/MyraIcons/aperture-tinted.png",
+				"Resources/MyraIcons/ribbon-m-clear.png",
+				"Resources/MyraIcons/ribbon-m-dark.png",
+				"Resources/MyraIcons/ribbon-m-default.png",
+				"Resources/MyraIcons/ribbon-m-tinted.png",
+				"Resources/MyraIcons/spotlight-clear.png",
+				"Resources/MyraIcons/spotlight-dark.png",
+				"Resources/MyraIcons/spotlight-default.png",
+				"Resources/MyraIcons/spotlight-tinted.png",
 				Resources/TMDB.svg,
 				Resources/VLC.icns,
 			);
@@ -245,9 +244,11 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 15;
+				DEVELOPMENT_TEAM = 55M5ZPFV2B;
 				EXCLUDED_ARCHS = armv7;
 				"EXCLUDED_ARCHS[sdk=iphonesimulator*]" = arm64;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "iPad/MyraPad-Info.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = Myra;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.entertainment";
 				INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace = YES;
@@ -257,10 +258,15 @@
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UIRequiresFullScreen = NO;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
-				INFOPLIST_FILE = "iPad/MyraPad-Info.plist";
-				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
 				MARKETING_VERSION = 4.1.0;
-				OTHER_LDFLAGS = "$(inherited) -lsqlite3";
+				OTHER_LDFLAGS = (
+					"$(inherited)",
+					"-lsqlite3",
+				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.mehedee.Myra.iPad;
 				PRODUCT_NAME = Myra;
 				SUPPORTS_MACCATALYST = NO;
@@ -278,9 +284,11 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 15;
+				DEVELOPMENT_TEAM = 55M5ZPFV2B;
 				EXCLUDED_ARCHS = armv7;
 				"EXCLUDED_ARCHS[sdk=iphonesimulator*]" = arm64;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "iPad/MyraPad-Info.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = Myra;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.entertainment";
 				INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace = YES;
@@ -290,10 +298,15 @@
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UIRequiresFullScreen = NO;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
-				INFOPLIST_FILE = "iPad/MyraPad-Info.plist";
-				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
 				MARKETING_VERSION = 4.1.0;
-				OTHER_LDFLAGS = "$(inherited) -lsqlite3";
+				OTHER_LDFLAGS = (
+					"$(inherited)",
+					"-lsqlite3",
+				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.mehedee.Myra.iPad;
 				PRODUCT_NAME = Myra;
 				SUPPORTS_MACCATALYST = NO;
