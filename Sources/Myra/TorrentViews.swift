@@ -1,5 +1,9 @@
 import SwiftUI
+#if os(iOS)
+import MobileVLCKit
+#else
 import VLCKit
+#endif
 
 private func byteText(_ value: Int64) -> String {
   ByteCountFormatter.string(fromByteCount: max(0, value), countStyle: .file)
@@ -509,14 +513,18 @@ enum TorrentPlayerWindow {
   /// The player model leaves Picture in Picture and raises its window; the window lookup is the fallback.
   static func bringToFront() {
     NotificationCenter.default.post(name: .myraReturnToPlayer, object: nil)
+    #if os(macOS)
     NSApp.activate(ignoringOtherApps: true)
     NSApp.windows.first { containsVideo($0.contentView) }?.makeKeyAndOrderFront(nil)
+    #endif
   }
 
+  #if os(macOS)
   private static func containsVideo(_ view: NSView?) -> Bool {
     guard let view else { return false }
     return view is VLCVideoView || view.subviews.contains { containsVideo($0) }
   }
+  #endif
 }
 
 struct TorrentSettingsSection: View {

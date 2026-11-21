@@ -1,4 +1,8 @@
+#if canImport(AppKit)
 import AppKit
+#else
+import UIKit
+#endif
 import Foundation
 import UniformTypeIdentifiers
 
@@ -153,6 +157,9 @@ final class TorrentController: ObservableObject {
   }
 
   func chooseTorrentFile() {
+    #if os(iOS)
+    error = TorrentEngineClient.unavailableMessage
+    #else
     let panel = NSOpenPanel()
     panel.allowedContentTypes = [UTType(filenameExtension: "torrent") ?? .data]
     panel.allowsMultipleSelection = false
@@ -161,6 +168,7 @@ final class TorrentController: ObservableObject {
       guard response == .OK, let url = panel.url else { return }
       Task { @MainActor in await self?.importTorrentFile(url) }
     }
+    #endif
   }
 
   func importTorrentFile(_ url: URL) async {

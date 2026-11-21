@@ -1,4 +1,8 @@
+#if canImport(AppKit)
 import AppKit
+#else
+import UIKit
+#endif
 import SwiftUI
 
 /// Toolbar tabs in the Settings window, in display order.
@@ -6,6 +10,15 @@ enum MyraSettingsTab: String, CaseIterable, Identifiable, Sendable {
   case general, library, downloads, playback, ai, torrents, data, advanced
 
   static let defaultTab: MyraSettingsTab = .general
+
+  /// The tabs this build shows. Torrents are not part of the iPad build.
+  static var visibleTabs: [MyraSettingsTab] {
+    #if os(macOS)
+    allCases
+    #else
+    allCases.filter { $0 != .torrents }
+    #endif
+  }
 
   var id: String { rawValue }
 
@@ -128,6 +141,7 @@ struct SettingsView: View {
   }
 
   @ViewBuilder private var generalSections: some View {
+    #if os(macOS)
     SettingsGroup(title: "App icon") {
       SettingsRow(
         title: "Icon",
@@ -143,6 +157,7 @@ struct SettingsView: View {
           })
       }
     }
+    #endif
     SettingsGroup(title: "Appearance") {
       SettingsRow(title: "Theme") {
         SettingsSelect(
@@ -219,6 +234,20 @@ struct SettingsView: View {
   }
 
   @ViewBuilder private var downloadsSections: some View {
+    #if os(iOS)
+    SettingsGroup(
+      title: "Location",
+      note: "Downloads continue in the background while Myra is closed. Open the Files app to manage them."
+    ) {
+      SettingsRow(title: "Save downloads to", detail: "On My iPad › Myra › Downloads") {
+        Button("Show in Files") {
+          PlatformServices.reveal(URL(fileURLWithPath: settings.downloadDirectory, isDirectory: true))
+        }
+        .buttonStyle(MyraButtonStyle())
+      }
+    }
+    AutomationSettingsGroup()
+    #else
     SettingsGroup(title: "Location") {
       SettingsRow(
         title: "Save downloads to",
@@ -270,6 +299,7 @@ struct SettingsView: View {
           options: SettingsChoices.strings(Self.speedLimits, current: settings.speedLimit))
       }
     }
+    #endif
   }
 
   @ViewBuilder private var playbackSections: some View {
@@ -325,9 +355,22 @@ private struct SettingsTabBar: View {
   let accent: Color
 
   var body: some View {
+    #if os(iOS)
+    // A narrow iPad window (Split View) cannot fit every tab, so the row scrolls there.
+    ViewThatFits(in: .horizontal) {
+      row
+      ScrollView(.horizontal, showsIndicators: false) { row.fixedSize(horizontal: true, vertical: false) }
+        .background(MyraColor.fill)
+    }
+    #else
+    row
+    #endif
+  }
+
+  private var row: some View {
     HStack(spacing: 2) {
       Spacer(minLength: 0)
-      ForEach(MyraSettingsTab.allCases) { tab in
+      ForEach(MyraSettingsTab.visibleTabs) { tab in
         let isSelected = selection == tab
         Button {
           selection = tab
@@ -367,6 +410,9 @@ private struct SettingsTabBar: View {
 
 /// The preview's `.foot`: the automatic-save note on the left and a Close button on the right.
 private struct SettingsFooter: View {
+  #if os(iOS)
+  @Environment(\.dismiss) private var dismiss
+  #endif
   var body: some View {
     HStack(spacing: 8) {
       Text(SettingsMetrics.footerText)
@@ -374,7 +420,11 @@ private struct SettingsFooter: View {
         .foregroundStyle(MyraColor.text2)
       Spacer(minLength: 8)
       Button("Close") {
+        #if os(iOS)
+        dismiss()
+        #else
         NSApp.keyWindow?.performClose(nil)
+        #endif
       }
       .buttonStyle(MyraButtonStyle())
       .keyboardShortcut(.cancelAction)

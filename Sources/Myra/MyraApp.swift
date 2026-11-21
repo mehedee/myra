@@ -1,4 +1,8 @@
+#if canImport(AppKit)
 import AppKit
+#else
+import UIKit
+#endif
 import CoreSpotlight
 import SwiftData
 import SwiftUI
@@ -133,6 +137,7 @@ enum AppPersistence {
   }
 }
 
+#if os(macOS)
 final class MyraAppDelegate: NSObject, NSApplicationDelegate {
   var terminationHandler: (() -> Void)?
 
@@ -206,3 +211,4 @@ struct MyraApp: App {
     }
   }
 }
+#endif

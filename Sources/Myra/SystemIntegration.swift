@@ -1,4 +1,8 @@
+#if canImport(AppKit)
 import AppKit
+#else
+import UIKit
+#endif
 @preconcurrency import CoreSpotlight
 import Foundation
 import UniformTypeIdentifiers
@@ -149,7 +153,9 @@ final class MyraSystemRouter {
 @MainActor
 final class SystemIntegrationController {
   private weak var coordinator: AppCoordinator?
+  #if os(macOS)
   private var menuBar: MenuBarController?
+  #endif
   private var appliedMenuBar = false
   private var appliedSpotlight: Bool?
   /// The entries last sent to Spotlight. Catalogue reloads during indexing are skipped when nothing changed.
@@ -218,12 +224,18 @@ final class SystemIntegrationController {
 
   /// Called from the Settings switch. macOS permission is requested only from here, when the user enables notifications.
   static func requestNotificationPermission() async -> Bool {
-    (try? await UNUserNotificationCenter.current().requestAuthorization(options: [
-      .alert, .sound,
-    ])) ?? false
+    // The iPad app icon badge needs badge permission; the Mac Dock badge does not.
+    #if os(iOS)
+    let options: UNAuthorizationOptions = [.alert, .sound, .badge]
+    #else
+    let options: UNAuthorizationOptions = [.alert, .sound]
+    #endif
+    return (try? await UNUserNotificationCenter.current().requestAuthorization(options: options))
+      ?? false
   }
 
   private func applyMenuBar() {
+    #if os(macOS)
     let wanted = MyraSystemPreferences.menuBarEnabled()
     guard wanted != appliedMenuBar else {
       if wanted { menuBar?.refresh() }
@@ -239,6 +251,7 @@ final class SystemIntegrationController {
       menuBar?.remove()
       menuBar = nil
     }
+    #endif
   }
 
   private func applyDockBadge() {
@@ -246,9 +259,15 @@ final class SystemIntegrationController {
     let active = ShellBadges.downloads(coordinator.batches)
     let label =
       MyraSystemPreferences.dockBadgeEnabled() ? DockBadge.label(activeDownloads: active) : nil
+    #if os(macOS)
     let dockTile = NSApplication.shared.dockTile
     guard dockTile.badgeLabel != label else { return }
     dockTile.badgeLabel = label
+    #else
+    // The app icon badge on iPadOS takes a number and needs notification permission.
+    let count = label == nil ? 0 : active
+    Task { try? await UNUserNotificationCenter.current().setBadgeCount(count) }
+    #endif
   }
 
   private func applySpotlightState() {

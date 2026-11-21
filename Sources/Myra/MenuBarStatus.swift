@@ -1,4 +1,8 @@
+#if canImport(AppKit)
 import AppKit
+#else
+import UIKit
+#endif
 import Foundation
 
 /// The facts the menu bar item shows, captured from the coordinator at one moment.
@@ -52,6 +56,7 @@ enum MenuBarText {
   }
 }
 
+#if os(macOS)
 /// The NSStatusItem with now playing, indexing and downloads, plus Open Myra, Pause or Resume
 /// Indexing, and Quit. Created only when the Advanced switch is on.
 @MainActor
@@ -154,3 +159,4 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     NSApp.terminate(nil)
   }
 }
+#endif

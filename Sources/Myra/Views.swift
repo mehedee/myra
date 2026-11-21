@@ -1,4 +1,8 @@
+#if canImport(AppKit)
 import AppKit
+#else
+import UIKit
+#endif
 import SwiftData
 import SwiftUI
 
@@ -717,7 +721,7 @@ private struct DirectoryThumbnailCard: View {
           Button(action: play) { Image(systemName: "play.fill").frame(width: 30, height: 30) }
             .help("Play in Myra").accessibilityLabel("Play")
           Button(action: openInVLC) {
-            Image(nsImage: VLCIconAsset.image).resizable().scaledToFit()
+            Image(platformImage: VLCIconAsset.image).resizable().scaledToFit()
               .frame(width: 22, height: 22).frame(width: 30, height: 30)
           }
           .disabled(!isVLCInstalled)
@@ -735,7 +739,7 @@ private struct DirectoryThumbnailCard: View {
     }
     .padding(10)
     .background(
-      Color(nsColor: .controlBackgroundColor),
+      Color(platformColor: .myraControlBackground),
       in: RoundedRectangle(cornerRadius: 14, style: .continuous)
     )
     .overlay {
@@ -775,7 +779,10 @@ private struct DirectoryThumbnailCard: View {
 
 @MainActor
 enum VLCIconAsset {
-  static let image: NSImage = {
+  static let image: PlatformImage = {
+    #if os(iOS)
+    return UIImage(systemName: "play.rectangle.fill")!
+    #else
     #if SWIFT_PACKAGE
       let url = Bundle.module.url(forResource: "VLC", withExtension: "icns")
     #else
@@ -783,6 +790,7 @@ enum VLCIconAsset {
     #endif
     if let url, let image = NSImage(contentsOf: url) { return image }
     return NSImage(systemSymbolName: "play.rectangle.fill", accessibilityDescription: "VLC")!
+    #endif
   }()
 }
 
@@ -818,7 +826,7 @@ struct ToastView: View {
       .padding(.horizontal, 13)
       .frame(height: 36)
       .background(
-        Color(nsColor: .controlBackgroundColor),
+        Color(platformColor: .myraControlBackground),
         in: Capsule(style: .continuous)
       )
       .overlay { Capsule(style: .continuous).stroke(.secondary.opacity(0.2), lineWidth: 1) }
@@ -913,7 +921,7 @@ private enum DurationFormatter {
 
 extension View {
   @ViewBuilder func mediaHeaderScrollEffect() -> some View {
-    if #available(macOS 26.0, *) {
+    if #available(macOS 26.0, iOS 26.0, *) {
       self.scrollEdgeEffectStyle(.soft, for: .top).backgroundExtensionEffect()
     } else {
       self

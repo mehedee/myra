@@ -1,4 +1,8 @@
+#if canImport(AppKit)
 import AppKit
+#else
+import UIKit
+#endif
 import SwiftUI
 
 /// Measurements taken from the approved Home section of the redesign preview.
@@ -499,7 +503,7 @@ struct HomeView: View {
     moodRow.padding(.top, 18)
     if let mood {
       shelf(
-        "\(mood.title) picks", subtitle: "Ranked on this Mac from your mood, time and history",
+        "\(mood.title) picks", subtitle: "Ranked on this \(MyraDevice.name) from your mood, time and history",
         titles: tonight.filter { $0.id != tonightPick?.id }.map(\.title)
       )
     }
@@ -818,7 +822,7 @@ struct TonightWhyView: View {
       }
       ForEach(pick.reasons, id: \.self) { Label($0, systemImage: "checkmark") }
       Text(
-        "Ranked on this Mac from your mood, the time of day and your viewing history. No AI request was made."
+        "Ranked on this \(MyraDevice.name) from your mood, the time of day and your viewing history. No AI request was made."
       )
       .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
     }

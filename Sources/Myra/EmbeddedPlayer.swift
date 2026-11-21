@@ -1,7 +1,27 @@
+#if canImport(AppKit)
 import AppKit
+#else
+import UIKit
+#endif
 import Foundation
 import UniformTypeIdentifiers
+#if os(iOS)
+import MobileVLCKit
+#else
 import VLCKit
+#endif
+
+#if os(macOS)
+/// The view VLC draws video into, and the window that hosts it.
+typealias PlayerVideoSurface = VLCVideoView
+typealias PlayerHostWindow = NSWindow
+typealias PlayerMenu = NSMenu
+#else
+typealias PlayerVideoSurface = UIView
+typealias PlayerHostWindow = UIWindow
+/// iPadOS menus are SwiftUI menus; nothing needs cancelling.
+final class PlayerMenu { func cancelTracking() {} }
+#endif
 
 struct PlayerTrack: Identifiable, Equatable, Sendable {
   let id: Int32
@@ -67,6 +87,8 @@ struct PlayerControlsVisibility {
   private(set) var lastInteraction: Double = 0
 
   mutating func interact(now: Double) { lastInteraction = now }
+  /// Forgets the last interaction, so fullscreen controls hide now instead of after the delay.
+  mutating func expire() { lastInteraction = -.infinity }
   func isVisible(now: Double, scrubbing: Bool) -> Bool {
     !fullscreen || hovering || menuTracking || scrubbing || now - lastInteraction < 2
   }
@@ -98,7 +120,9 @@ final class EmbeddedPlayerModel: ObservableObject {
   @Published private(set) var subtitleSyncMilliseconds = 0
   /// Floating Picture in Picture panel. While set, VLC draws into the panel instead of the window.
   @Published private(set) var pictureInPicture = false
+  #if os(macOS)
   private var pip: PlayerPictureInPictureWindow?
+  #endif
   private var returnObserver: NSObjectProtocol?
   @Published var repeatEnabled = false
   @Published var isScrubbing = false
@@ -106,8 +130,8 @@ final class EmbeddedPlayerModel: ObservableObject {
   @Published var errorMessage: String?
   @Published var resumePosition: Double?
   private(set) var engine: VLCMediaPlayer?
-  private weak var videoView: VLCVideoView?
-  private weak var window: NSWindow?
+  private weak var videoView: PlayerVideoSurface?
+  private weak var window: PlayerHostWindow?
   private var pollTask: Task<Void, Never>?
   private var manualAudioSelection = false
   private var manualSubtitleSelection = false
@@ -119,7 +143,9 @@ final class EmbeddedPlayerModel: ObservableObject {
   private var windowObservers: [NSObjectProtocol] = []
   private var eventMonitor: Any?
   private var previousMouseMovedEvents = false
+  #if os(macOS)
   private let fullscreenChrome = PlayerFullscreenChrome()
+  #endif
   private var fullscreenTransition = false
   private var fullscreenExitRequested = false
   private var returnAfterFullscreen = false
@@ -142,10 +168,14 @@ final class EmbeddedPlayerModel: ObservableObject {
   private var automaticResumeSeconds: Double?
   private var endTask: Task<Void, Never>?
   private var playbackObserver: NSObjectProtocol?
-  private weak var activeMenu: NSMenu?
+  private weak var activeMenu: PlayerMenu?
   @Published var subtitleSearch: OnlineSubtitleSearchModel?
   var onNotice: ((String) -> Void)?
-  var playbackWindow: NSWindow? { window }
+  var playbackWindow: PlayerHostWindow? { window }
+  #if os(iOS)
+  /// Set by `loadSubtitle()`; the iPad player shows a file picker while it is true.
+  @Published var isPickingSubtitle = false
+  #endif
 
   init() {
     // The Transfers page's "Return to Player" posts this notification; it lives outside the player.
@@ -349,7 +379,9 @@ final class EmbeddedPlayerModel: ObservableObject {
     returnAfterFullscreen = false
     self.media = media
     onPlaybackStarted?(media)
+    #if os(macOS)
     fullscreenChrome.update(window: window, fullscreen: isFullscreen)
+    #endif
     manualAudioSelection = false
     manualSubtitleSelection = false
     audioTracks = []
@@ -408,7 +440,11 @@ final class EmbeddedPlayerModel: ObservableObject {
         self.handleCompletion(current.state)
       }
     }
+    #if os(macOS)
     if let drawable = pip?.videoView ?? videoView { engine.drawable = drawable }
+    #else
+    if let drawable = videoView { engine.drawable = drawable }
+    #endif
     engine.currentVideoSubTitleDelay = PlayerSubtitleSync.microseconds(subtitleSyncMilliseconds)
     if beginPlayback { engine.play() }
     let id = loadID
@@ -434,18 +470,19 @@ final class EmbeddedPlayerModel: ObservableObject {
     return try? await index.playbackPosition(url: result.entry.url)
   }
 
-  func attach(view: VLCVideoView) {
+  func attach(view: PlayerVideoSurface) {
     videoView = view
     // SwiftUI temporarily detaches the video surface during fullscreen layout changes.
     // A nil surface window must not discard the root view's stable window binding.
     if let window = view.window, self.window == nil { setWindow(window) }
     if engine?.drawable as AnyObject? !== view { engine?.drawable = view }
   }
-  func detach(view: VLCVideoView) {
+  func detach(view: PlayerVideoSurface) {
     // While Picture in Picture owns the drawable, the window surface's teardown must not clear it.
     if engine?.drawable as AnyObject? === view { engine?.drawable = nil }
     if videoView === view { videoView = nil }
   }
+#if os(macOS)
   func setWindow(_ newWindow: NSWindow?) {
     guard window !== newWindow else { return }
     removeWindowTracking()
@@ -617,6 +654,71 @@ final class EmbeddedPlayerModel: ObservableObject {
     return true
   }
 
+#else
+  func setWindow(_ newWindow: PlayerHostWindow?) { window = newWindow }
+
+  private func removeWindowTracking() {}
+
+  private func updateFullscreen(_ value: Bool) {
+    if isFullscreen != value { isFullscreen = value }
+    controlsState.fullscreen = value
+    controlsState.hovering = false
+    controlsState.menuTracking = false
+    noteInteraction()
+  }
+
+  func noteInteraction() {
+    controlsState.interact(now: ProcessInfo.processInfo.systemUptime)
+    if !controlsVisible { controlsVisible = true }
+  }
+
+  func hoverControls(_ hovering: Bool) {
+    controlsState.hovering = hovering
+    noteInteraction()
+  }
+  /// A tap on the video while the controls show hides them at once.
+  func hideControls() {
+    controlsState.expire()
+    controlsVisible = false
+  }
+  func setMenuTracking(_ tracking: Bool, menu: PlayerMenu? = nil) {
+    activeMenu = tracking ? menu : nil
+    controlsState.menuTracking = tracking
+    noteInteraction()
+  }
+
+  /// On iPad the player always fills the screen; "fullscreen" hides the library chrome around it.
+  func toggleFullscreen() {
+    guard media != nil else { return }
+    updateFullscreen(!isFullscreen)
+  }
+
+  func exitFullscreen() {
+    guard media != nil else { return }
+    updateFullscreen(false)
+  }
+
+  /// Hardware keyboard shortcuts on iPad. Key codes follow the macOS player.
+  enum PadKey { case space, left, right, up, down, escape }
+  func handleKey(_ key: PadKey, coarse: Bool = false, fine: Bool = false) -> Bool {
+    guard media != nil, !isClosing, !controlsState.menuTracking else { return false }
+    switch key {
+    case .space: togglePlayback()
+    case .left, .right:
+      let distance: Double = coarse ? 60 : fine ? 3 : 10
+      jump(seconds: key == .left ? -distance : distance)
+    case .up: setVolume(volume + 5)
+    case .down: setVolume(volume - 5)
+    case .escape:
+      guard isFullscreen else { return false }
+      exitFullscreen()
+    }
+    noteInteraction()
+    return true
+  }
+
+#endif
+
   func togglePlayback() {
     guard let engine else { return }
     if engine.isPlaying { engine.pause() } else { engine.play() }
@@ -638,11 +740,13 @@ final class EmbeddedPlayerModel: ObservableObject {
     subtitleSearch?.cancel()
     subtitleSearch = nil
     engine?.stop()
+    #if os(macOS)
     if fullscreenTransition || window?.styleMask.contains(.fullScreen) == true {
       returnAfterFullscreen = true
       if !fullscreenTransition { exitFullscreen() }
       return
     }
+    #endif
     finishClosingPlayer()
   }
 
@@ -738,6 +842,7 @@ final class EmbeddedPlayerModel: ObservableObject {
 
   /// Floats the video in an always-on-top panel. AVKit cannot present VLCKit output, so the
   /// panel takes over VLC's drawable. Unavailable in full screen, where macOS owns the window.
+#if os(macOS)
   func enterPictureInPicture() {
     guard media != nil, !isFullscreen, !isClosing, pip == nil, let engine else { return }
     let panel = PlayerPictureInPictureWindow(player: self)
@@ -788,6 +893,17 @@ final class EmbeddedPlayerModel: ObservableObject {
     pictureInPicture = false
     close()
   }
+#else
+  /// VLC output cannot use the system Picture in Picture on iPad, so it is not offered.
+  func enterPictureInPicture() {}
+  func togglePictureInPicture() {}
+  func returnFromPictureInPicture() {}
+  func returnToPlayer() {}
+  private func dismissPictureInPicture() {
+    if pictureInPicture { pictureInPicture = false }
+  }
+
+#endif
   func setAspect(_ value: String?) {
     if let value {
       value.withCString { engine?.videoAspectRatio = UnsafeMutablePointer(mutating: $0) }
@@ -804,6 +920,9 @@ final class EmbeddedPlayerModel: ObservableObject {
   }
   func setDeinterlace(_ mode: VLCDeinterlace) { engine?.setDeinterlace(mode, withFilter: "yadif") }
 
+  #if os(iOS)
+  func loadSubtitle() { isPickingSubtitle = true }
+  #else
   func loadSubtitle() {
     let panel = NSOpenPanel()
     panel.allowsMultipleSelection = false
@@ -818,6 +937,7 @@ final class EmbeddedPlayerModel: ObservableObject {
       }
     }
   }
+  #endif
 
   @discardableResult
   func loadSubtitle(from url: URL, for mediaID: GlobalSearchResultID? = nil) -> Bool {

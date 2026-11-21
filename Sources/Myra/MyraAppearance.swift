@@ -1,4 +1,8 @@
+#if canImport(AppKit)
 import AppKit
+#else
+import UIKit
+#endif
 import SwiftUI
 
 /// The Myra icon choices. Aperture is the default and the packaged bundle icon.
@@ -71,6 +75,10 @@ final class MyraAppearance {
   private static var observers: [NSObjectProtocol] = []
 
   static func apply(defaults: UserDefaults = .standard) {
+    #if os(iOS)
+    // iPadOS uses the packaged icon; alternate icons would need registering in Info.plist.
+    migrateStoredFamily(defaults: defaults)
+    #else
     if observers.isEmpty {
       observers.append(
         DistributedNotificationCenter.default().addObserver(
@@ -94,6 +102,7 @@ final class MyraAppearance {
     if let image = image(family: family, appearance: preference, dark: dark) {
       NSApplication.shared.applicationIconImage = image
     }
+    #endif
   }
 
   /// Moves a value stored by the retired family picker to Aperture and returns the current choice.
@@ -116,11 +125,11 @@ final class MyraAppearance {
     return "\(family.rawValue)-\(resolved.renditionSuffix)"
   }
 
-  static func image(family: MyraIconFamily, appearance: MyraIconAppearance, dark: Bool) -> NSImage?
+  static func image(family: MyraIconFamily, appearance: MyraIconAppearance, dark: Bool) -> PlatformImage?
   {
     guard let url = resourceURL(named: resourceName(family: family, appearance: appearance, dark: dark))
     else { return nil }
-    return NSImage(contentsOf: url)
+    return PlatformImage.myraLoad(contentsOf: url)
   }
 
   static func resourceURL(named name: String) -> URL? {
@@ -161,7 +170,7 @@ struct MyraIconPicker: View {
               family: option, appearance: MyraIconAppearance(storedValue: appearance),
               dark: colorScheme == .dark)
             {
-              Image(nsImage: icon).resizable().frame(width: 40, height: 40)
+              Image(platformImage: icon).resizable().frame(width: 40, height: 40)
                 .accessibilityHidden(true)
             }
             Text(option.title)

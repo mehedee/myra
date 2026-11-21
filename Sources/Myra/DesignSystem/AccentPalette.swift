@@ -1,4 +1,8 @@
+#if canImport(AppKit)
 import AppKit
+#else
+import UIKit
+#endif
 import SwiftUI
 
 /// Accent colour choices in macOS order. The raw value is the stable identifier stored in
@@ -51,19 +55,18 @@ enum MyraAccent: String, CaseIterable, Identifiable, Sendable {
   }
 
   /// A dynamic colour that resolves to the light or dark variant from the current appearance.
-  var nsColor: NSColor {
+  var nsColor: PlatformColor {
     let values = hexValues
-    return NSColor(name: nil) { appearance in
-      let isDark = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-      return MyraAccent.srgb(isDark ? values.dark : values.light)
+    return PlatformColor.myraDynamic { isDark in
+      MyraAccent.srgb(isDark ? values.dark : values.light)
     }
   }
 
-  var color: Color { Color(nsColor: nsColor) }
+  var color: Color { Color(platformColor: nsColor) }
 
-  static func srgb(_ hex: UInt32) -> NSColor {
-    NSColor(
-      srgbRed: CGFloat((hex >> 16) & 0xFF) / 255,
+  static func srgb(_ hex: UInt32) -> PlatformColor {
+    PlatformColor.myraSRGB(
+      red: CGFloat((hex >> 16) & 0xFF) / 255,
       green: CGFloat((hex >> 8) & 0xFF) / 255,
       blue: CGFloat(hex & 0xFF) / 255,
       alpha: 1)

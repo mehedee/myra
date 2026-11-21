@@ -340,9 +340,7 @@ final class AppSettings {
 
   init() {
     self.id = "primary"
-    self.downloadDirectory =
-      FileManager.default.homeDirectoryForCurrentUser
-      .appending(path: "Downloads/Myra", directoryHint: .isDirectory).path
+    self.downloadDirectory = AppSettings.defaultDownloadDirectory.path
     self.aria2PathOverride = ""
     self.concurrentDownloads = 4
     self.connectionsPerFile = 8
@@ -365,4 +363,30 @@ struct Aria2Status: Sendable {
   let completedLength: Int64
   let downloadSpeed: Int64
   let errorMessage: String?
+}
+
+extension AppSettings {
+  /// `~/Downloads/Myra` on macOS. On iPadOS, `Documents/Downloads`, which the Files app shows
+  /// under On My iPad › Myra.
+  static var defaultDownloadDirectory: URL {
+    #if os(iOS)
+    URL.documentsDirectory.appending(path: "Downloads", directoryHint: .isDirectory)
+    #else
+    FileManager.default.homeDirectoryForCurrentUser
+      .appending(path: "Downloads/Myra", directoryHint: .isDirectory)
+    #endif
+  }
+}
+
+/// iPadOS app containers move on restore or reinstall, which breaks stored absolute paths.
+enum DownloadPathRebase {
+  /// The same file under the current `documents` folder, or nil when `path` already lives there
+  /// or is not inside any app's Documents folder.
+  static func rebased(_ path: String, documents: String) -> String? {
+    let root = documents.hasSuffix("/") ? String(documents.dropLast()) : documents
+    guard !path.hasPrefix(root + "/"), let marker = path.range(of: "/Documents/") else {
+      return nil
+    }
+    return root + "/" + path[marker.upperBound...]
+  }
 }

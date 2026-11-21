@@ -1,4 +1,8 @@
+#if canImport(AppKit)
 import AppKit
+#else
+import UIKit
+#endif
 import SwiftData
 import SwiftUI
 
@@ -184,7 +188,9 @@ struct RootView: View {
           .transition(.move(edge: .top).combined(with: .opacity))
       }
     }
+    #if os(macOS)
     .background(PlayerWindowAttachment(player: player))
+    #endif
     .font(.system(size: 13, weight: .regular, design: .default))
     .environment(\.defaultMinListRowHeight, 42)
     .environment(\.myraAccent, accent)
@@ -204,7 +210,11 @@ struct RootView: View {
     .navigationTitle("Myra")
     // The shell draws its own 52pt header and the player draws its own top bar, so the window has
     // no native toolbar.
+    #if os(macOS)
     .toolbar(.hidden, for: .windowToolbar)
+    #else
+    .toolbar(.hidden, for: .navigationBar)
+    #endif
   }
 
   /// Sidebar, header and the active page, laid out as the approved preview window.
@@ -431,7 +441,11 @@ struct RootView: View {
       guard player.media != nil else { return }
       player.navigate(offset: 1)
     case .toggleFullScreen:
+      #if os(macOS)
       NSApp.keyWindow?.toggleFullScreen(nil)
+      #else
+      player.toggleFullscreen()
+      #endif
     case .find:
       searchFocused = true
     case .addSource, .pickSomething, .askMyra:
@@ -501,14 +515,23 @@ private struct ShellSidebar: View {
       navItem(.downloads, badge: ShellBadges.downloads(coordinator.batches))
       navItem(.collections, badge: 0)
       navItem(.attention, badge: 0)
+      #if os(macOS)
       groupLabel("Torrents")
       navItem(.transfers, badge: ShellBadges.transfers(torrents.transferRows))
+      #endif
       Spacer(minLength: 12)
+      #if os(iOS)
+      settingsItem
+      #endif
       footer
     }
     .padding(.horizontal, collapsed ? 8 : 10)
     // The window buttons sit in the sidebar's top row, as the preview's `.lights` row.
+    #if os(macOS)
     .padding(.top, 42)
+    #else
+    .padding(.top, collapsed ? 12 : 44)
+    #endif
     .padding(.bottom, 12)
     .frame(width: SidebarState.width(collapsed: collapsed))
     .frame(maxHeight: .infinity)
@@ -527,6 +550,32 @@ private struct ShellSidebar: View {
   private var toggleButton: some View {
     SidebarToggleButton(collapsed: collapsed, action: toggle)
   }
+
+  #if os(iOS)
+  /// iPadOS has no Settings window, so the sidebar opens Settings as a sheet.
+  private var settingsItem: some View {
+    Button {
+      NotificationCenter.default.post(name: .myraShowSettings, object: nil)
+    } label: {
+      HStack(spacing: 9) {
+        Image(systemName: "gearshape")
+          .font(.system(size: 15))
+          .frame(width: 17, height: 17)
+          .foregroundStyle(accent.color)
+        if !collapsed { Text("Settings") }
+        if !collapsed { Spacer(minLength: 0) }
+      }
+      .font(.system(size: 13))
+      .padding(.horizontal, 8)
+      .padding(.vertical, 6)
+      .frame(maxWidth: .infinity, alignment: collapsed ? .center : .leading)
+      .contentShape(RoundedRectangle(cornerRadius: 8))
+    }
+    .buttonStyle(.plain)
+    .accessibilityLabel("Settings")
+    .accessibilityIdentifier("sidebar.settings")
+  }
+  #endif
 
   private func navItem(_ item: AppSection, badge: Int) -> some View {
     let selected = section == item
@@ -698,6 +747,7 @@ private struct SidebarToggleButton: View {
   }
 }
 
+#if os(macOS)
 /// Lets the header's empty space move and zoom the window, as the hidden title bar would.
 struct WindowDragArea: NSViewRepresentable {
   func makeNSView(context: Context) -> NSView { DragView() }
@@ -715,3 +765,11 @@ struct WindowDragArea: NSViewRepresentable {
     }
   }
 }
+#endif
+
+#if os(iOS)
+/// iPadOS windows are not dragged by their content, so the header needs no drag area.
+struct WindowDragArea: View {
+  var body: some View { Color.clear }
+}
+#endif

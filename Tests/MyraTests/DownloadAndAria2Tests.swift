@@ -96,4 +96,16 @@ final class DownloadAndAria2Tests: XCTestCase {
     await controller.shutdown()
     XCTAssertFalse(controller.isRunning)
   }
+
+  func testDownloadPathRebaseMovesOldContainerPathsIntoCurrentDocuments() {
+    let documents = "/var/mobile/Containers/Data/Application/NEW/Documents"
+    XCTAssertEqual(
+      DownloadPathRebase.rebased(
+        "/var/mobile/Containers/Data/Application/OLD/Documents/Downloads/Show/S01E01.mkv",
+        documents: documents),
+      documents + "/Downloads/Show/S01E01.mkv")
+    XCTAssertNil(
+      DownloadPathRebase.rebased(documents + "/Downloads/a.mkv", documents: documents + "/"))
+    XCTAssertNil(DownloadPathRebase.rebased("/Users/me/Downloads/Myra/a.mkv", documents: documents))
+  }
 }

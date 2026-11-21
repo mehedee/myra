@@ -144,7 +144,7 @@ struct IndexManagementView: View {
           set: {
             if $0 { selected.insert(row.id) } else { selected.remove(row.id) }
           })
-      ) { Text(name).lineLimit(1) }.toggleStyle(.checkbox)
+      ) { Text(name).lineLimit(1) }.myraCheckboxToggleStyle()
         .help(row.scope.folder.absoluteString)
       Spacer()
       Text("\(row.files.formatted()) files").font(.caption).foregroundStyle(.secondary)

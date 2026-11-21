@@ -1,6 +1,11 @@
+#if canImport(AppKit)
 import AppKit
+#else
+import UIKit
+#endif
 import SwiftUI
 
+#if os(macOS)
 /// Fullscreen playback owns only the chrome properties it changes, not the window delegate.
 @MainActor
 final class PlayerFullscreenChrome {
@@ -88,3 +93,4 @@ struct PlayerWindowAttachment: NSViewRepresentable {
     }
   }
 }
+#endif

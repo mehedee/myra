@@ -7,5 +7,6 @@ xcuserdata/
 Package.resolved
 *.aria2
 /Vendor/VLCKit.xcframework/
+/Vendor/MobileVLCKit.xcframework/
 docs/private-roadmap.md
 docs/artifacts/

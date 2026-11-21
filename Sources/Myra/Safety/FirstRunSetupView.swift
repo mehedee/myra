@@ -88,7 +88,7 @@ struct FirstRunSetupView: View {
     case .check:
       VStack(alignment: .leading, spacing: 10) {
         Text("Setup check").font(.system(size: 20, weight: .bold))
-        Text("Here is what Myra can read on this Mac.").foregroundStyle(MyraColor.text2)
+        Text("Here is what Myra can read on this \(MyraDevice.name).").foregroundStyle(MyraColor.text2)
         VStack(spacing: 0) {
           ForEach(checks) { result in
             HStack(spacing: 10) {

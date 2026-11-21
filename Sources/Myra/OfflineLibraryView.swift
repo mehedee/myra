@@ -1,4 +1,8 @@
+#if canImport(AppKit)
 import AppKit
+#else
+import UIKit
+#endif
 import SwiftUI
 
 /// The Downloads page: the segmented control and storage line, then either transfers in progress
@@ -111,7 +115,7 @@ struct OfflineLibraryView: View {
   private var libraryContent: some View {
     VStack(alignment: .leading, spacing: 0) {
       HStack(spacing: 12) {
-        Toggle("Hide missing", isOn: $hideMissing).toggleStyle(.checkbox)
+        Toggle("Hide missing", isOn: $hideMissing).myraCheckboxToggleStyle()
         Spacer()
       }
       .padding(.bottom, 12)
@@ -209,7 +213,7 @@ private struct OfflineVersionChooser: View {
                   Text(url.path).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
                   Spacer()
                   if exists {
-                    Button("Reveal") { NSWorkspace.shared.activateFileViewerSelecting([url]) }
+                    Button("Reveal") { PlatformServices.reveal(url) }
                   } else {
                     Label("Missing file", systemImage: "exclamationmark.triangle").foregroundStyle(
                       .orange

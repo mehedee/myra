@@ -19,6 +19,7 @@ struct TorrentEngineEvent: Decodable, Sendable {
   var percent: Double?
 }
 
+#if os(macOS)
 /// The app owns the helper's pipes and lifetime. No shell, daemon, or public RPC endpoint.
 @MainActor
 final class TorrentEngineClient {
@@ -142,3 +143,4 @@ final class TorrentEngineClient {
     }.value
   }
 }
+#endif

@@ -1,4 +1,8 @@
+#if canImport(AppKit)
 import AppKit
+#else
+import UIKit
+#endif
 import SwiftUI
 
 /// The Settings → General translucency choice. Strong is the default, as in the approved preview.
@@ -55,6 +59,7 @@ enum MyraTranslucency: String, CaseIterable, Identifiable, Sendable {
   }
 
   /// The system material behind the window. Off draws no material.
+  #if os(macOS)
   var material: NSVisualEffectView.Material? {
     switch self {
     case .off: nil
@@ -63,6 +68,16 @@ enum MyraTranslucency: String, CaseIterable, Identifiable, Sendable {
     case .strong: .underWindowBackground
     }
   }
+  #else
+  var material: Material? {
+    switch self {
+    case .off: nil
+    case .subtle: .thickMaterial
+    case .standard: .regularMaterial
+    case .strong: .ultraThinMaterial
+    }
+  }
+  #endif
 
   /// Respecting Reduce Transparency: the surfaces become opaque, whatever the choice.
   func resolved(reduceTransparency: Bool) -> MyraTranslucency {
@@ -82,6 +97,7 @@ extension EnvironmentValues {
   }
 }
 
+#if os(macOS)
 /// The window's backing: a real `NSVisualEffectView` that blurs what is behind the window, with the
 /// window colour over it. It also makes the hosting window non-opaque so the blur can show through.
 struct TranslucentWindowBackground: NSViewRepresentable {
@@ -121,6 +137,7 @@ struct TranslucentWindowBackground: NSViewRepresentable {
     }
   }
 }
+#endif
 
 /// The three surfaces of the shell. Each is a colour at the level's alpha over the layer beneath.
 struct TranslucentSurface: View {
@@ -151,3 +168,18 @@ struct TranslucentSurface: View {
     }
   }
 }
+
+#if os(iOS)
+/// iPadOS has no window-behind blur; the shell's backing is a SwiftUI material instead.
+struct TranslucentWindowBackground: View {
+  let level: MyraTranslucency
+
+  var body: some View {
+    if let material = level.material {
+      Rectangle().fill(material).ignoresSafeArea()
+    } else {
+      MyraColor.windowBase.ignoresSafeArea()
+    }
+  }
+}
+#endif

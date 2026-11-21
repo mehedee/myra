@@ -1,4 +1,8 @@
+#if canImport(AppKit)
 import AppKit
+#else
+import UIKit
+#endif
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -93,6 +97,10 @@ struct EntertainmentTransferView: View {
   @State private var isImporting = false
   @State private var message: String?
   @State private var error: String?
+  #if os(iOS)
+  @State private var exportDocument: MyraJSONDocument?
+  @State private var isChoosingImport = false
+  #endif
 
   var body: some View {
     VStack(alignment: .leading, spacing: 18) {
@@ -140,7 +148,7 @@ struct EntertainmentTransferView: View {
             if let path = archive.appPreferences?.previousDownloadDirectory {
               Text("Previous download directory: \(path)").font(.caption).textSelection(.enabled)
               Text(
-                "This path is informational. Reconnect your download directory in Settings on this Mac; local downloaded files are not included in the backup."
+                "This path is informational. Reconnect your download directory in Settings on this \(MyraDevice.name); local downloaded files are not included in the backup."
               )
               .font(.caption).foregroundStyle(.orange)
             }
@@ -148,7 +156,7 @@ struct EntertainmentTransferView: View {
               let localPaths = state.markers.keys.filter { $0.hasPrefix("file:") }.count
               if localPaths > 0 {
                 Text(
-                  "\(localPaths) local playback marker keys may need matching paths on this Mac."
+                  "\(localPaths) local playback marker keys may need matching paths on this \(MyraDevice.name)."
                 )
                 .font(.caption).foregroundStyle(.orange)
               }
@@ -158,7 +166,7 @@ struct EntertainmentTransferView: View {
         Picker("Import behaviour", selection: $replace) {
           Text("Merge with current library").tag(false)
           Text("Replace sources and personal library").tag(true)
-        }.pickerStyle(.radioGroup)
+        }.myraRadioPickerStyle()
         Text(
           replace
             ? "Current sources and personal records will be replaced. A backup is saved before replacement. Downloaded files and credentials are preserved."
@@ -178,29 +186,70 @@ struct EntertainmentTransferView: View {
       if let message { Text(message).foregroundStyle(.green).textSelection(.enabled) }
       if let error { Text(error).foregroundStyle(.orange).textSelection(.enabled) }
     }.padding(24).frame(minWidth: 650, idealWidth: 740, minHeight: 480, idealHeight: 640)
+    #if os(iOS)
+    .fileExporter(
+      isPresented: Binding(get: { exportDocument != nil }, set: { if !$0 { exportDocument = nil } }),
+      document: exportDocument, contentType: .json,
+      defaultFilename: "Myra-Entertainment-Backup.json"
+    ) { result in
+      switch result {
+      case .success(let url):
+        error = nil
+        message = "Backup saved to \(url.lastPathComponent)."
+      case .failure(let failure): error = failure.localizedDescription
+      }
+    }
+    .fileImporter(isPresented: $isChoosingImport, allowedContentTypes: [.json]) { result in
+      switch result {
+      case .success(let url):
+        let scoped = url.startAccessingSecurityScopedResource()
+        defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+        loadImport(from: url)
+      case .failure(let failure): error = failure.localizedDescription
+      }
+    }
+    #endif
+  }
+
+  private func exportData() throws -> Data {
+    try store.exportArchive(
+      sources: coordinator.exportEntertainmentSources(),
+      appPreferences: coordinator.exportEntertainmentPreferences())
   }
 
   private func export() {
+    #if os(iOS)
+    do {
+      exportDocument = MyraJSONDocument(data: try exportData())
+    } catch { self.error = error.localizedDescription }
+    #else
     let panel = NSSavePanel()
     panel.allowedContentTypes = [.json]
     panel.nameFieldStringValue = "Myra-Entertainment-Backup.json"
     guard panel.runModal() == .OK, let url = panel.url else { return }
     do {
-      let data = try store.exportArchive(
-        sources: coordinator.exportEntertainmentSources(),
-        appPreferences: coordinator.exportEntertainmentPreferences())
+      let data = try exportData()
       try data.write(to: url, options: .atomic)
       error = nil
       message = "Backup saved to \(url.path)."
     } catch { self.error = error.localizedDescription }
+    #endif
   }
 
   private func openImport() {
+    #if os(iOS)
+    isChoosingImport = true
+    #else
     let panel = NSOpenPanel()
     panel.allowedContentTypes = [.json]
     panel.canChooseDirectories = false
     panel.allowsMultipleSelection = false
     guard panel.runModal() == .OK, let url = panel.url else { return }
+    loadImport(from: url)
+    #endif
+  }
+
+  private func loadImport(from url: URL) {
     do {
       let values = try url.resourceValues(forKeys: [.fileSizeKey])
       guard (values.fileSize ?? 0) <= 20_000_000 else {

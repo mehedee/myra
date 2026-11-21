@@ -174,7 +174,7 @@ struct InsightsSummary: Equatable, Sendable {
       }
     }
     lines.append("")
-    lines.append("Computed on this Mac from watch history. Nothing was uploaded.")
+    lines.append("Computed on this \(MyraDevice.name) from watch history. Nothing was uploaded.")
     return lines.joined(separator: "\n")
   }
 }

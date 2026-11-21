@@ -1,4 +1,8 @@
+#if canImport(AppKit)
 import AppKit
+#else
+import UIKit
+#endif
 import CoreGraphics
 import SwiftUI
 
@@ -43,8 +47,7 @@ enum MyraColor {
   /// A dynamic colour from a 0xRRGGBB value and an alpha, for light and dark appearance.
   static func dynamic(_ light: (UInt32, CGFloat), _ dark: (UInt32, CGFloat)) -> Color {
     Color(
-      nsColor: NSColor(name: nil) { appearance in
-        let isDark = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+      platformColor: PlatformColor.myraDynamic { isDark in
         let value = isDark ? dark : light
         return MyraAccent.srgb(value.0).withAlphaComponent(value.1)
       })

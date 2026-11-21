@@ -69,7 +69,7 @@ struct TorrentSearchView: View {
       Spacer(minLength: 0)
       if let onManageIndexers {
         Button("Manage indexers…", action: onManageIndexers)
-          .buttonStyle(.link)
+          .myraLinkButtonStyle()
           .font(.system(size: 12))
       }
     }
@@ -189,7 +189,7 @@ struct TorrentSearchView: View {
         .font(.system(size: 12))
         Spacer(minLength: 8)
         Button("Retry") { model.retryFailed() }
-          .buttonStyle(.link)
+          .myraLinkButtonStyle()
           .disabled(model.isSearching)
       }
       ForEach(failed) { status in
@@ -275,15 +275,14 @@ struct TorrentSearchView: View {
     if let magnet = result.shareableMagnet {
       actions.append(
         RowCardAction(id: "copy", title: "Copy magnet link", systemImage: "doc.on.doc") {
-          NSPasteboard.general.clearContents()
-          NSPasteboard.general.setString(magnet, forType: .string)
+          PlatformServices.copy(magnet)
           controller.notice = "Magnet link copied."
         })
     }
     if result.archiveID != nil || result.license != nil, let source = result.sourceURL {
       actions.append(
         RowCardAction(id: "source", title: "View source", systemImage: "arrow.up.right.square") {
-          NSWorkspace.shared.open(source)
+          PlatformServices.open(source)
         })
     }
     return RowCardItem(

@@ -111,7 +111,7 @@ actor MyraAIProviderClient: MyraAITransport {
   }
 
   static func appleAvailability() -> String? {
-    guard #available(macOS 26.0, *) else { return "Apple on-device AI needs macOS 26 or later." }
+    guard #available(macOS 26.0, iOS 26.0, *) else { return "Apple on-device AI needs macOS 26 or later." }
     switch SystemLanguageModel.default.availability {
     case .available: return nil
     case .unavailable(let reason):
@@ -134,7 +134,7 @@ actor MyraAIProviderClient: MyraAITransport {
   }
 
   func prewarm(feature: MyraAIFeature) async {
-    guard #available(macOS 26.0, *), Self.appleAvailability() == nil else { return }
+    guard #available(macOS 26.0, iOS 26.0, *), Self.appleAvailability() == nil else { return }
     await MyraAppleModelRuntime.shared.prewarm(feature: feature)
   }
 
@@ -163,7 +163,7 @@ actor MyraAIProviderClient: MyraAITransport {
   }
 
   private func appleGenerate(_ request: MyraAIRequest) async throws -> String {
-    guard #available(macOS 26.0, *) else {
+    guard #available(macOS 26.0, iOS 26.0, *) else {
       throw MyraAIError.unavailable("Apple AI requires macOS 26 or later.")
     }
     if let reason = Self.appleAvailability() { throw MyraAIError.unavailable(reason) }
@@ -284,7 +284,7 @@ enum MyraAIPrivacy {
 /// The on-device session runtime. One reusable session per feature and purpose is kept, so the
 /// model loads once and prewarmed sessions answer the first request. A session is dropped when
 /// its transcript grows past the limit or when the model reports an overflow or decoding failure.
-@available(macOS 26.0, *)
+@available(macOS 26.0, iOS 26.0, *)
 actor MyraAppleModelRuntime {
   static let shared = MyraAppleModelRuntime()
 
@@ -491,7 +491,7 @@ private struct MyraAppleWireOutput: Decodable {
   }
 }
 
-@available(macOS 26.0, *)
+@available(macOS 26.0, iOS 26.0, *)
 @Generable
 private struct MyraAppleDescription {
   @Guide(description: "Complete the named task using supplied facts only") var summary: String
@@ -501,7 +501,7 @@ private struct MyraAppleDescription {
   }
 }
 
-@available(macOS 26.0, *)
+@available(macOS 26.0, iOS 26.0, *)
 @Generable
 private struct MyraAppleIntent {
   @Guide(description: "Specific title keywords only; nil for moods, genres and vague requests")

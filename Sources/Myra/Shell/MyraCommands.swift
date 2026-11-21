@@ -1,4 +1,8 @@
+#if canImport(AppKit)
 import AppKit
+#else
+import UIKit
+#endif
 import SwiftUI
 
 /// Menu routing: every menu item posts a `MyraCommand` on `NotificationCenter.default`
@@ -164,9 +168,11 @@ struct MyraCommands: Commands {
   }
 
   var body: some Commands {
+    #if os(macOS)
     CommandGroup(replacing: .appInfo) {
       Button("About Myra") { NSApplication.shared.orderFrontStandardAboutPanel(nil) }
     }
+    #endif
     CommandGroup(after: .appInfo) {
       UpdateCheckButton(updater: coordinator.updater)
     }

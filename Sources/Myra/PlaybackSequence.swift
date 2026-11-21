@@ -1,5 +1,9 @@
 import Foundation
+#if os(iOS)
+import MobileVLCKit
+#else
 import VLCKit
+#endif
 
 /// An ephemeral, folder-scoped queue. Browser filters and Global results never define episode order.
 struct PlaybackSequence: Sendable {

@@ -113,6 +113,7 @@
 		F42000000000000000000004 = {isa = PBXBuildFile; fileRef = F41000000000000000000004; };
 		F42000000000000000000005 = {isa = PBXBuildFile; fileRef = F41000000000000000000005; };
 		F42000000000000000000006 = {isa = PBXBuildFile; fileRef = F41000000000000000000006; };
+		F7A000000000000000000002 /* PlatformSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = F7A000000000000000000001 /* PlatformSupport.swift */; };
 		F42000000000000000000007 = {isa = PBXBuildFile; fileRef = F41000000000000000000007; };
 		F42000000000000000000008 = {isa = PBXBuildFile; fileRef = F41000000000000000000008; };
 		F44000000000000000000001 = {isa = PBXBuildFile; fileRef = F43000000000000000000001; };
@@ -282,6 +283,7 @@
 		F41000000000000000000004 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MyraAIViews.swift; sourceTree = "<group>"; };
 		F41000000000000000000005 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MyraAppearance.swift; sourceTree = "<group>"; };
 		F41000000000000000000006 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FuzzySearch.swift; sourceTree = "<group>"; };
+		F7A000000000000000000001 /* PlatformSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlatformSupport.swift; sourceTree = "<group>"; };
 		F41000000000000000000007 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MyraAppearanceTests.swift; sourceTree = "<group>"; };
 		F41000000000000000000008 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FuzzySearchTests.swift; sourceTree = "<group>"; };
 		F43000000000000000000001 = {isa = PBXFileReference; lastKnownFileType = folder.icon; path = Resources/MyraIcons/aperture.icon; sourceTree = SOURCE_ROOT; };
@@ -457,6 +459,7 @@
 				F41000000000000000000004,
 				F41000000000000000000005,
 				F41000000000000000000006,
+				F7A000000000000000000001 /* PlatformSupport.swift */,
 				F31000000000000000000002,
 				F31000000000000000000001,
 				B00100000000000000000005,
@@ -710,6 +713,7 @@ F44000000000000000000001, F44000000000000000000002,
 				F42000000000000000000004,
 				F42000000000000000000005,
 				F42000000000000000000006,
+				F7A000000000000000000002 /* PlatformSupport.swift in Sources */,
 				F32000000000000000000002,
 				F32000000000000000000001,
 				A00100000000000000000005,

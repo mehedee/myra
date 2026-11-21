@@ -12,12 +12,14 @@ struct AdvancedSettingsSection: View {
   var body: some View {
     SettingsGroup(
       title: "System integration",
-      note: "Each item can be switched off. Myra sends nothing off this Mac for these features."
+      note: "Each item can be switched off. Myra sends nothing off this \(MyraDevice.name) for these features."
     ) {
+      #if os(macOS)
       SettingsToggleRow(
         title: "Menu bar item",
         detail: "Now playing, indexing and downloads in the menu bar",
         isOn: $menuBar)
+      #endif
       SettingsToggleRow(
         title: "Spotlight",
         detail: "Search your title names from Spotlight. File names, paths and contents are not shared.",
@@ -34,10 +36,17 @@ struct AdvancedSettingsSection: View {
       ) {
         StatusPill(text: "Deferred", style: .neutral)
       }
+      #if os(macOS)
       SettingsToggleRow(
         title: "Dock badge",
         detail: "Shows how many downloads are in progress",
         isOn: $dockBadge)
+      #else
+      SettingsToggleRow(
+        title: "App icon badge",
+        detail: "Shows how many downloads are in progress. Needs notification permission.",
+        isOn: $dockBadge)
+      #endif
       SettingsToggleRow(
         title: "Notify when finished",
         detail: "Finished downloads, library updates with new titles, and source problems",

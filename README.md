@@ -192,6 +192,24 @@ Verification formats/lints Swift, tests the package, builds Release, creates `di
 
 `zsh Scripts/build-dmg.sh` builds the DMG independently and preserves `dist/Myra.previous.dmg`. Original icon sources are in `Resources/MyraIcons`; `Scripts/generate-myra-icons.py` regenerates native icon exports.
 
+### iPad (iPadOS 17 or later)
+
+`MyraPad.xcodeproj` builds Myra for iPad from the same `Sources/Myra` code, plus the iPad-only files in `iPad/Sources`. Platform differences use `#if os(macOS)` / `#if os(iOS)` and the helpers in `Sources/Myra/PlatformSupport.swift`.
+
+```sh
+zsh Scripts/prepare-mobile-vlc.sh
+xcodebuild -project MyraPad.xcodeproj -scheme MyraPad -destination 'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO build
+```
+
+To install on an iPad: open `MyraPad.xcodeproj`, choose your team under Signing & Capabilities, connect the iPad and Run. A free Apple ID install expires after 7 days; a paid developer account lasts 1 year.
+
+Differences from the Mac app:
+
+- Downloads use a URLSession background session instead of aria2. They continue while Myra is closed and are saved to Documents › Downloads, which the Files app shows under On My iPad › Myra.
+- Torrents, Sparkle updates, the menu bar item, Dock icon choice, floating Picture in Picture and Apple on-device AI are not available.
+- To copy a Mac profile once: on the Mac, open Home › ⋯ › Export / Import… and choose Export backup. Send the JSON file to the iPad with AirDrop or Files, then open the same menu on the iPad and import it. Source passwords and downloaded files are not in the backup.
+- MobileVLCKit 3.7.3 ships an Intel-only simulator slice, so the iPad app runs on a device or an Intel-mode simulator, not a native Apple silicon simulator.
+
 ## Storage, safety, and rollback
 
 Myra stores data under `~/Library/Application Support/com.mehedee.Myra/`: `Myra.store`, `LibraryIndex.sqlite`, and `EntertainmentPersonal.json`. The default download destination is `~/Downloads/Myra`; explicit existing destinations are preserved by migration. API keys remain in Keychain. AI settings use `myra.ai.settings`; icon preferences use separate Myra defaults.

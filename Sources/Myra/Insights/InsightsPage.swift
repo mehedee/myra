@@ -1,4 +1,8 @@
+#if canImport(AppKit)
 import AppKit
+#else
+import UIKit
+#endif
 import SwiftUI
 
 /// The Insights page: hours watched, watch streak, top genre and the most watched titles, all
@@ -45,7 +49,7 @@ struct InsightsPage: View {
         }
 
         Text(
-          "Insights are computed on this Mac from your watch history. Nothing is uploaded. Hours count the furthest point each file reached."
+          "Insights are computed on this \(MyraDevice.name) from your watch history. Nothing is uploaded. Hours count the furthest point each file reached."
         )
         .font(.system(size: 12))
         .foregroundStyle(MyraColor.text2)
@@ -187,8 +191,7 @@ struct InsightsPage: View {
   }
 
   private func shareSummary(_ summary: InsightsSummary) {
-    NSPasteboard.general.clearContents()
-    NSPasteboard.general.setString(summary.shareText(), forType: .string)
+    PlatformServices.copy(summary.shareText())
     copied = true
   }
 

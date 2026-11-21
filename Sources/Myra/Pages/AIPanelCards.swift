@@ -170,7 +170,7 @@ enum MyraAIGroundingLine {
   }
 
   static func privacyNote(provider: MyraAIProvider) -> String {
-    provider.isCloud ? "Sent to \(provider.title) under your AI settings" : "Nothing left this Mac"
+    provider.isCloud ? "Sent to \(provider.title) under your AI settings" : "Nothing left this \(MyraDevice.name)"
   }
 
   static func footerItems(

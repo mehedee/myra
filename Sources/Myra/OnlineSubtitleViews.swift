@@ -1,4 +1,8 @@
+#if canImport(AppKit)
 import AppKit
+#else
+import UIKit
+#endif
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -7,6 +11,10 @@ final class OnlineSubtitleSearchModel: ObservableObject, Identifiable {
   let id = UUID()
   let media: GlobalSearchResult
   @Published var title: String
+  #if os(iOS)
+  /// Set by `importSubtitle()`; the search sheet shows the system file picker while it is true.
+  @Published var isPickingFile = false
+  #endif
   @Published var year: String
   @Published var season: String
   @Published var episode: String
@@ -185,6 +193,9 @@ final class OnlineSubtitleSearchModel: ObservableObject, Identifiable {
   }
 
   func importSubtitle() {
+    #if os(iOS)
+    isPickingFile = true
+    #else
     let panel = NSOpenPanel()
     panel.canChooseDirectories = false
     panel.allowsMultipleSelection = false
@@ -195,7 +206,22 @@ final class OnlineSubtitleSearchModel: ObservableObject, Identifiable {
       guard result == .OK, let url = panel.url else { return }
       Task { @MainActor in self?.useLocal(url) }
     }
+    #endif
   }
+
+  #if os(iOS)
+  /// Picked files are security scoped; copy one into the temporary folder, then use it.
+  func useImported(_ url: URL) {
+    let scoped = url.startAccessingSecurityScopedResource()
+    defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+    let target = FileManager.default.temporaryDirectory.appending(path: url.lastPathComponent)
+    try? FileManager.default.removeItem(at: target)
+    do {
+      try FileManager.default.copyItem(at: url, to: target)
+      useLocal(target)
+    } catch { message = error.localizedDescription }
+  }
+  #endif
 
   var webSearchURL: URL {
     var components = URLComponents(string: "https://www.opensubtitles.org/en/search2")!
@@ -231,6 +257,16 @@ struct OnlineSubtitleSearchView: View {
       .font(.caption).foregroundStyle(.secondary)
       HStack {
         Button("Import Subtitle…") { model.importSubtitle() }
+          #if os(iOS)
+          .fileImporter(
+            isPresented: $model.isPickingFile,
+            allowedContentTypes: ["srt", "ass", "ssa", "vtt"].compactMap {
+              UTType(filenameExtension: $0)
+            }
+          ) { result in
+            if case .success(let url) = result { model.useImported(url) }
+          }
+          #endif
         Link("Find on the Web", destination: model.webSearchURL)
       }
       if !model.localSubtitles.isEmpty {

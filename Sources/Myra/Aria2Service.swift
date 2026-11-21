@@ -163,6 +163,7 @@ struct AppSettingsSnapshot: Sendable {
   }
 }
 
+#if os(macOS)
 @MainActor
 final class Aria2Controller {
   private var process: Process?
@@ -256,3 +257,4 @@ final class Aria2Controller {
     throw Aria2Error.executableNotFound
   }
 }
+#endif

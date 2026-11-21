@@ -1,7 +1,13 @@
+#if canImport(AppKit)
 import AppKit
+#else
+import UIKit
+#endif
 import Combine
 import Foundation
+#if os(macOS)
 import Sparkle
+#endif
 import SwiftUI
 
 /// Build-time trust configuration. Neither the feed nor the trusted key is user-overridable.
@@ -24,6 +30,7 @@ struct UpdateConfiguration {
   }
 }
 
+#if os(macOS)
 /// Sparkle owns scheduling, version/OS compatibility, signature validation and transactional installation.
 @MainActor
 final class AppUpdater: NSObject, ObservableObject, SPUUpdaterDelegate {
@@ -125,3 +132,4 @@ struct UpdateSettingsSection: View {
     }
   }
 }
+#endif

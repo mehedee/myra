@@ -1,7 +1,16 @@
+#if canImport(AppKit)
 import AppKit
+#else
+import UIKit
+#endif
 import SwiftUI
+#if os(iOS)
+import MobileVLCKit
+#else
 import VLCKit
+#endif
 
+#if os(macOS)
 /// Native pop-up menus are built once per opening, not during each transport refresh.
 struct PlayerOptionsMenus: NSViewRepresentable {
   let player: EmbeddedPlayerModel
@@ -180,3 +189,4 @@ struct PlayerOptionsMenus: NSViewRepresentable {
     @objc func run() { action() }
   }
 }
+#endif

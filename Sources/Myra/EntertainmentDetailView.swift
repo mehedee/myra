@@ -1,4 +1,8 @@
+#if canImport(AppKit)
 import AppKit
+#else
+import UIKit
+#endif
 import SwiftUI
 
 /// Keeps source identity visible while allowing a persistent manual metadata correction.
@@ -101,7 +105,7 @@ struct EntertainmentDetailView: View {
         }
         if currentRating > 0 {
           Button("Clear") { store.setRating(current.id, stars: nil) }
-            .buttonStyle(.link)
+            .myraLinkButtonStyle()
             .font(.system(size: 12))
             .padding(.leading, 6)
         }
@@ -123,7 +127,7 @@ struct EntertainmentDetailView: View {
         guard !Task.isCancelled else { return }
         store.setNote(current.id, text: draft)
       }
-      Text("Only on this Mac. Ratings and notes are kept through metadata refreshes and included in your backup.")
+      Text("Only on this \(MyraDevice.name). Ratings and notes are kept through metadata refreshes and included in your backup.")
         .font(.caption).foregroundStyle(MyraColor.text3)
     }
   }
@@ -164,7 +168,7 @@ struct EntertainmentDetailView: View {
   /// Opens the trailer only when the stored metadata carries a link. No lookup happens here.
   private func openTrailer() {
     guard let url = current.metadata?.openableTrailerURL else { return }
-    NSWorkspace.shared.open(url)
+    PlatformServices.open(url)
   }
 
   private var header: some View {
@@ -342,7 +346,7 @@ struct EntertainmentDetailView: View {
           Text("Series").tag(EntertainmentKind.series)
         }
         TextField("TMDB ID (optional, numeric)", text: $providerID)
-        Toggle("Apply to every version in this title", isOn: $applyToAll).toggleStyle(.checkbox)
+        Toggle("Apply to every version in this title", isOn: $applyToAll).myraCheckboxToggleStyle()
         if let correctionError { Text(correctionError).foregroundStyle(.orange) }
         Button("Save correction") { saveCorrection() }
           .buttonStyle(MyraButtonStyle())

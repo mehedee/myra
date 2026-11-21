@@ -1,6 +1,14 @@
+#if canImport(AppKit)
 import AppKit
+#else
+import UIKit
+#endif
 import SwiftUI
+#if os(iOS)
+import MobileVLCKit
+#else
 import VLCKit
+#endif
 
 extension Notification.Name {
   /// Posted when the Transfers page asks for the player back. The player model answers it.
@@ -21,6 +29,7 @@ enum PlayerPictureInPictureSupport {
     "Playback uses VLCKit, which has no AVPlayer output for AVRoutePickerView."
 }
 
+#if os(macOS)
 /// A floating, always-on-top panel that hosts the VLC video view while Picture in Picture is on.
 @MainActor
 final class PlayerPictureInPictureWindow: NSObject, NSWindowDelegate {
@@ -83,6 +92,7 @@ final class PlayerPictureInPictureWindow: NSObject, NSWindowDelegate {
     onUserClosed?()
   }
 }
+#endif
 
 /// Transport controls over the floating video: play or pause, return to the main window.
 struct PlayerPictureInPictureControls: View {

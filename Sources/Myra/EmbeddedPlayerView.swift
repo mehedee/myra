@@ -1,6 +1,14 @@
+#if canImport(AppKit)
 import AppKit
+#else
+import UIKit
+#endif
 import SwiftUI
+#if os(iOS)
+import MobileVLCKit
+#else
 import VLCKit
+#endif
 
 struct LibraryPlayerContainer: View {
   @ObservedObject var coordinator: AppCoordinator
@@ -28,7 +36,7 @@ struct LibraryPlayerContainer: View {
             .frame(maxHeight: .infinity)
             .background(.regularMaterial)
             .overlay(alignment: .leading) {
-              Rectangle().fill(Color(nsColor: .separatorColor)).frame(width: 1)
+              Rectangle().fill(Color(platformColor: .myraSeparator)).frame(width: 1)
             }
             .shadow(color: .black.opacity(0.22), radius: 14, x: -5, y: 0)
             .transition(.move(edge: .trailing).combined(with: .opacity))
@@ -348,6 +356,8 @@ struct EmbeddedPlayerView: View {
       }
       // Picture in Picture floats the VLC video in its own panel. AirPlay is intentionally
       // absent: VLCKit has no AVPlayer output to route (see PlayerPictureInPictureSupport).
+      // iPadOS system Picture in Picture cannot show VLC output, so the button is Mac only.
+      #if os(macOS)
       Button {
         player.togglePictureInPicture()
       } label: {
@@ -361,6 +371,7 @@ struct EmbeddedPlayerView: View {
       )
       .accessibilityLabel("Picture in Picture")
       .accessibilityIdentifier("player.pictureInPicture")
+      #endif
       Button {
         if player.isFullscreen { player.exitFullscreen() } else { player.toggleFullscreen() }
       } label: {
@@ -396,6 +407,7 @@ extension View {
   }
 }
 
+#if os(macOS)
 private final class PlayerVideoView: VLCVideoView {
   var onKey: ((NSEvent) -> Bool)?
   var onFullscreen: (() -> Void)?
@@ -414,7 +426,9 @@ private final class PlayerVideoView: VLCVideoView {
     window?.makeFirstResponder(self)
   }
 }
+#endif
 
+#if os(macOS)
 private struct VLCVideoSurface: NSViewRepresentable {
   @ObservedObject var model: EmbeddedPlayerModel
   func makeCoordinator() -> Coordinator { Coordinator(model: model) }
@@ -439,7 +453,9 @@ private struct VLCVideoSurface: NSViewRepresentable {
     init(model: EmbeddedPlayerModel) { self.model = model }
   }
 }
+#endif
 
+#if os(macOS)
 final class SeekSlider: NSSlider {
   var begin: (() -> Void)?
   var change: ((Double) -> Void)?
@@ -497,7 +513,9 @@ final class SeekSlider: NSSlider {
     commit?(doubleValue)
   }
 }
+#endif
 
+#if os(macOS)
 private struct VLCSeekBar: NSViewRepresentable {
   @ObservedObject var model: EmbeddedPlayerModel
   /// Fraction of the bar buffered ahead of the playhead; drawn translucent behind the played part.
@@ -533,7 +551,9 @@ private struct VLCSeekBar: NSViewRepresentable {
     if !model.isScrubbing { slider.doubleValue = model.position }
   }
 }
+#endif
 
+#if os(macOS)
 enum SeekBarGeometry {
   static func track(in bounds: NSRect) -> NSRect {
     NSRect(x: bounds.minX + 9, y: bounds.midY - 3, width: max(1, bounds.width - 18), height: 6)
@@ -543,7 +563,9 @@ enum SeekBarGeometry {
     return min(1, max(0, Double((x - track.minX) / track.width)))
   }
 }
+#endif
 
+#if os(macOS)
 final class PlayerSeekSliderCell: NSSliderCell {
   /// Buffered-ahead fraction of the bar, drawn as a translucent white part.
   var bufferedFraction: Double = 0
@@ -589,3 +611,4 @@ final class PlayerSeekSliderCell: NSSliderCell {
   /// The preview has no knob on the scrub bar; the played part shows the position.
   override func drawKnob(_ knobRect: NSRect) {}
 }
+#endif

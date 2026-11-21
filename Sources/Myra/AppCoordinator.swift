@@ -1,4 +1,8 @@
+#if canImport(AppKit)
 import AppKit
+#else
+import UIKit
+#endif
 import Combine
 import Foundation
 import SwiftData
@@ -124,6 +128,26 @@ final class AppCoordinator: ObservableObject {
         settings = defaults
         try modelContext.save()
       }
+      #if os(iOS)
+      // The app container moves when Myra is reinstalled, so a stored absolute path can go stale.
+      if let settings, !settings.downloadDirectory.hasPrefix(URL.documentsDirectory.path) {
+        settings.downloadDirectory = AppSettings.defaultDownloadDirectory.path
+        try? modelContext.save()
+      }
+      try? FileManager.default.createDirectory(
+        at: AppSettings.defaultDownloadDirectory, withIntermediateDirectories: true)
+      // Stored item paths point into the old container after a restore or reinstall.
+      var rebased = false
+      for item in items {
+        if let path = DownloadPathRebase.rebased(
+          item.destinationPath, documents: URL.documentsDirectory.path)
+        {
+          item.destinationPath = path
+          rebased = true
+        }
+      }
+      if rebased { try? modelContext.save() }
+      #endif
       if currentCategory == nil, let first = categories.first {
         Task { await selectCategory(first) }
       }
@@ -667,19 +691,32 @@ final class AppCoordinator: ObservableObject {
   }
 
   var isVLCInstalled: Bool {
+    #if os(macOS)
     NSWorkspace.shared.urlForApplication(withBundleIdentifier: "org.videolan.vlc") != nil
+    #else
+    UIApplication.shared.canOpenURL(URL(string: "vlc-x-callback://")!)
+    #endif
   }
 
   func copyURL(_ entry: DirectoryEntry) {
     guard entry.kind == .file else { return }
-    let pasteboard = NSPasteboard.general
-    pasteboard.clearContents()
-    pasteboard.setString(entry.url.absoluteString, forType: .string)
+    PlatformServices.copy(entry.url.absoluteString)
     showToast("File URL copied")
   }
 
   func openInVLC(_ entry: DirectoryEntry) {
     guard entry.kind == .file else { return }
+    #if os(iOS)
+    // VLC for iOS streams a URL passed through its x-callback scheme.
+    var components = URLComponents(string: "vlc-x-callback://x-callback-url/stream")!
+    components.queryItems = [URLQueryItem(name: "url", value: entry.url.absoluteString)]
+    guard isVLCInstalled, let vlcURL = components.url else {
+      errorMessage = "VLC is not installed. Install VLC for Mobile from the App Store and try again."
+      return
+    }
+    showToast("Opening in VLC…")
+    UIApplication.shared.open(vlcURL)
+    #else
     guard
       let vlcURL = NSWorkspace.shared.urlForApplication(
         withBundleIdentifier: "org.videolan.vlc")
@@ -699,6 +736,7 @@ final class AppCoordinator: ObservableObject {
         self?.errorMessage = "VLC could not open this URL: \(error.localizedDescription)"
       }
     }
+    #endif
   }
 
   func pushToTV(_ entry: DirectoryEntry) {
@@ -716,7 +754,7 @@ final class AppCoordinator: ObservableObject {
       return
     }
     showToast("Sending to Sam Online…")
-    NSWorkspace.shared.open(shortcutURL)
+    PlatformServices.open(shortcutURL)
   }
 
   func cycleTheme() {
@@ -844,7 +882,7 @@ final class AppCoordinator: ObservableObject {
 
   func reveal(_ batch: DownloadBatch) {
     guard let item = itemsForBatch(batch).first else { return }
-    NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: item.destinationPath)])
+    PlatformServices.reveal(URL(fileURLWithPath: item.destinationPath))
   }
 
   func clearCompleted() {
@@ -885,6 +923,10 @@ final class AppCoordinator: ObservableObject {
   }
 
   func chooseDownloadDirectory() {
+    #if os(iOS)
+    // iPadOS keeps downloads in Myra's Documents folder, visible in the Files app.
+    return
+    #else
     let panel = NSOpenPanel()
     panel.canChooseDirectories = true
     panel.canChooseFiles = false
@@ -895,6 +937,7 @@ final class AppCoordinator: ObservableObject {
     settings.downloadBookmark = try? url.bookmarkData(
       options: .withSecurityScope, includingResourceValuesForKeys: nil, relativeTo: nil)
     try? modelContext?.save()
+    #endif
   }
 
   func saveSettings() {
@@ -961,7 +1004,9 @@ final class AppCoordinator: ObservableObject {
           try await resubmit(item, settings: settings)
         }
       }
-      try modelContext?.save()
+      // Files can finish while Myra is closed (iPadOS background downloads), so the batches
+      // must reflect items marked complete here even when nothing is left to poll.
+      reconcileBatches()
       startPolling()
     } catch { errorMessage = error.localizedDescription }
   }
@@ -1012,6 +1057,11 @@ final class AppCoordinator: ObservableObject {
         item.errorMessage = error.localizedDescription
       }
     }
+    reconcileBatches()
+  }
+
+  /// Derives each batch's totals and status from its items, then announces newly finished batches.
+  private func reconcileBatches() {
     let statusesBefore = Dictionary(uniqueKeysWithValues: batches.map { ($0.id, $0.status) })
     for batch in batches {
       let batchItems = itemsForBatch(batch)

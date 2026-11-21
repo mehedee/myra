@@ -6,7 +6,7 @@ struct SearchFocusIfAvailable: ViewModifier {
   var isFocused: FocusState<Bool>.Binding
 
   func body(content: Content) -> some View {
-    if #available(macOS 15.0, *) {
+    if #available(macOS 15.0, iOS 18.0, *) {
       content.searchFocused(isFocused)
     } else {
       content
